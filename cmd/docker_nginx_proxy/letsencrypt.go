@@ -62,8 +62,11 @@ func (s *LetsEncryptServer) newSslCert(domain string) error {
 		cmd.Args = append(cmd.Args, "--dry-run")
 	}
 
+	log.Printf("starting certbot: %v %v", cmd.Path, cmd.Args)
 	output, err := cmd.CombinedOutput()
-	s.lastModified = time.Now()
+	if err == nil {
+		s.lastModified = time.Now()
+	}
 	log.Println(cmd.ProcessState.Success(), string(output))
 	return err
 }
@@ -78,8 +81,11 @@ func (s *LetsEncryptServer) renewSslCerts() error {
 		"--force-renewal",
 	)
 
+	log.Printf("starting certbot: %v %v", cmd.Path, cmd.Args)
 	output, err := cmd.CombinedOutput()
-	s.lastModified = time.Now()
+	if err == nil {
+		s.lastModified = time.Now()
+	}
 	log.Println(cmd.ProcessState.Success(), string(output))
 	return err
 }
@@ -149,6 +155,8 @@ func (s *LetsEncryptServer) processNewCertRequests() {
 }
 
 func (s *LetsEncryptServer) handleDump(writer http.ResponseWriter, request *http.Request) {
+	log.Printf("/dump request")
+
 	ifModifiedSinceStr := request.Header.Get("If-Modified-Since")
 	if ifModifiedSinceStr != "" {
 		ifModifiedSince, err := http.ParseTime(ifModifiedSinceStr)
@@ -179,6 +187,8 @@ func (s *LetsEncryptServer) handleDump(writer http.ResponseWriter, request *http
 func (s *LetsEncryptServer) handleNewCert(writer http.ResponseWriter, request *http.Request) {
 	request.ParseForm()
 	domain := request.Form.Get("domain")
+	log.Printf("/new-cert?domain=%s request", domain)
+
 	if domain != "" {
 		writer.WriteHeader(http.StatusBadRequest)
 		return
