@@ -257,6 +257,7 @@ func (p *ProxyServer) downloadSslCerts() (bool, error) {
 	p.letsEncryptDataLastModified = resp.Header.Get("Last-Modified")
 
 	log.Printf("downloading ssl certificates from %v to %v", dumpURL, nginxLetsEncryptConfigDir)
+	log.Printf("ssl certificates were last modified at %v", p.letsEncryptDataLastModified)
 
 	cmd := exec.Command("tar", "-x", "-C", nginxLetsEncryptConfigDir)
 	cmd.Stdin = bytes.NewReader(data)
