@@ -6,7 +6,7 @@ RUN go build ./cmd/docker_nginx_proxy
 FROM ubuntu:18.04
 
 RUN apt-get update && \
-    apt-get install -y nginx dumb-init software-properties-common && \
+    apt-get install -y nginx dumb-init software-properties-common ssl-cert && \
     add-apt-repository ppa:certbot/certbot && \
     apt-get update && \
     apt-get install -y certbot && \
