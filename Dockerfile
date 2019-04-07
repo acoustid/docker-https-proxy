@@ -12,9 +12,7 @@ RUN apt-get update && \
     apt-get install -y certbot && \
     ln -sf /dev/stdout /var/log/nginx/access.log && \
     ln -sf /dev/stderr /var/log/nginx/error.log && \
-    mkdir /etc/nginx/sites && \
-    mkdir /var/log/letsencrypt && \
-    ln -sf /dev/stderr /var/log/letsencrypt/letsencrypt.log
+    mkdir /etc/nginx/sites
 
 COPY --from=builder /go/src/github.com/acoustid/docker-nginx-letsencrypt-proxy/docker_nginx_proxy /usr/local/bin/
 

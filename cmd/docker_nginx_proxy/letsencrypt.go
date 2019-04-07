@@ -120,15 +120,8 @@ func (s *LetsEncryptServer) checkIfCertExists(domain string) (bool, error) {
 }
 
 func (s *LetsEncryptServer) processNewCertRequests() {
-	go func() {
-		time.Sleep(1 * time.Minute)
-		for {
-			// s.newCertChannel <- "RENEW"
-			time.Sleep(1 * time.Hour)
-		}
-	}()
-
 	for domain := range s.newCertChannel {
+		log.Printf("new cert request %v", domain)
 		if domain == "RENEW" {
 			err := s.renewSslCerts()
 			if err != nil {
@@ -207,9 +200,10 @@ func (s *LetsEncryptServer) handleNewCert(writer http.ResponseWriter, request *h
 		return
 	}
 
+	s.newCertChannel <- domain
+
 	writer.WriteHeader(http.StatusOK)
 	writer.Write([]byte("ok"))
-	s.newCertChannel <- domain
 	return
 }
 
