@@ -287,7 +287,7 @@ func (p *ProxyServer) updateSslCertsOneIter() (bool, error) {
 }
 
 func (p *ProxyServer) updateSslCerts(nginxProcess *os.Process) {
-	defaultSleepDuration := 10 * time.Second
+	defaultSleepDuration := 1 * time.Minute
 	sleepDuration := defaultSleepDuration
 	for {
 		time.Sleep(sleepDuration)

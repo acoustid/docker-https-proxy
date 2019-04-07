@@ -115,10 +115,10 @@ func (s *LetsEncryptServer) checkIfCertExists(domain string) (bool, error) {
 
 func (s *LetsEncryptServer) processNewCertRequests() {
 	go func() {
+		time.Sleep(1 * time.Minute)
 		for {
-			time.Sleep(1 * time.Minute)
-			s.newCertChannel <- "RENEW"
-			time.Sleep(10 * time.Minute)
+			// s.newCertChannel <- "RENEW"
+			time.Sleep(1 * time.Hour)
 		}
 	}()
 
@@ -126,25 +126,25 @@ func (s *LetsEncryptServer) processNewCertRequests() {
 		if domain == "RENEW" {
 			err := s.renewSslCerts()
 			if err != nil {
-				log.Print("failed to renew certificates: %v", err)
+				log.Printf("failed to renew certificates: %v", err)
 				continue
 			}
 		}
 		exists, err := s.checkIfCertExists(domain)
 		if err != nil {
-			log.Print("failed to check if certificate for %s already exists: %v", domain, err)
+			log.Printf("failed to check if certificate for %s already exists: %v", domain, err)
 			continue
 		}
 		if exists {
-			log.Print("certificate for %s already exists, skipping", domain)
+			log.Printf("certificate for %s already exists, skipping", domain)
 			continue
 		}
 		err = s.newSslCert(domain)
 		if err != nil {
-			log.Print("failed to generate certificate for %s: %v", domain, err)
+			log.Printf("failed to generate certificate for %s: %v", domain, err)
 			continue
 		}
-		log.Print("successfully generated certificate for %s", domain)
+		log.Printf("successfully generated certificate for %s", domain)
 	}
 }
 
