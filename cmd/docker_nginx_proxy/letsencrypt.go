@@ -186,7 +186,7 @@ func (s *LetsEncryptServer) handleNewCert(writer http.ResponseWriter, request *h
 	domain := request.Form.Get("domain")
 	log.Printf("/new-cert?domain=%s request", domain)
 
-	if domain != "" {
+	if domain == "" {
 		writer.WriteHeader(http.StatusBadRequest)
 		return
 	}
