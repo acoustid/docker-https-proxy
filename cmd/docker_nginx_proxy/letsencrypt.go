@@ -29,7 +29,8 @@ type LetsEncryptServer struct {
 // NewLetsEncryptServer creates a new LetsEncryptServer instance
 func NewLetsEncryptServer() *LetsEncryptServer {
 	return &LetsEncryptServer{
-		lastModified: time.Now(),
+		newCertChannel: make(chan string),
+		lastModified:   time.Now(),
 	}
 }
 
@@ -129,6 +130,9 @@ func (s *LetsEncryptServer) processNewCertRequests() {
 				continue
 			}
 		}
+		if domain == "PING" {
+			continue
+		}
 		exists, err := s.checkIfCertExists(domain)
 		if err != nil {
 			log.Printf("failed to check if certificate for %s already exists: %v", domain, err)
@@ -219,8 +223,14 @@ func (s *LetsEncryptServer) Run() error {
 		return err
 	}
 
-	s.newCertChannel = make(chan string, 10)
 	go s.processNewCertRequests()
+
+	go func() {
+		for {
+			s.newCertChannel <- "PING"
+			time.Sleep(10 * time.Second)
+		}
+	}()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/dump", s.handleDump)
