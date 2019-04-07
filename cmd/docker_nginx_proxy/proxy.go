@@ -21,7 +21,8 @@ const letsEncryptServerPort = 12812
 
 const nginxLetsEncryptConfigDir = "/etc/nginx/letsencrypt/"
 const nginxMainConfFile = "/etc/nginx/nginx.conf"
-const nginxConfDir = "/etc/nginx/conf.d/"
+const nginxSitesDir = "/etc/nginx/sites/"
+const nginxSitesConf = "/etc/nginx/conf.d/50-sites.conf"
 
 const snakeoilSslCert = "/etc/ssl/certs/ssl-cert-snakeoil.pem"
 const snakeoilSslPrivateKey = "/etc/ssl/private/ssl-cert-snakeoil.key"
@@ -122,7 +123,7 @@ func (p *ProxyServer) updateNginxConfFiles() error {
 		return err
 	}
 
-	files, err := ioutil.ReadDir(nginxConfDir)
+	files, err := ioutil.ReadDir(nginxSitesDir)
 	if err != nil {
 		return err
 	}
@@ -130,17 +131,18 @@ func (p *ProxyServer) updateNginxConfFiles() error {
 	blockRe := regexp.MustCompile(`block=([^ ]+)`)
 	domainRe := regexp.MustCompile(`domain=([^ ]+)`)
 
+	var newLines []string
+
 	for _, file := range files {
 		if !file.IsDir() && strings.HasSuffix(file.Name(), ".conf") {
-			filename := path.Join(nginxConfDir, file.Name())
-			log.Printf("rewriting nginx config file %v", filename)
+			filename := path.Join(nginxSitesDir, file.Name())
+			log.Printf("reading nginx config file %v", filename)
 
 			data, err := ioutil.ReadFile(filename)
 			if err != nil {
 				log.Fatalf("failed to read %s: %v", filename, err)
 			}
 
-			var newLines []string
 			inBlock := false
 
 			lines := strings.Split(string(data), "\n")
@@ -187,11 +189,12 @@ func (p *ProxyServer) updateNginxConfFiles() error {
 
 			}
 
-			err = ioutil.WriteFile(filename, []byte(strings.Join(newLines, "\n")), file.Mode())
-			if err != nil {
-				return err
-			}
 		}
+	}
+
+	err = ioutil.WriteFile(nginxSitesConf, []byte(strings.Join(newLines, "\n")), 0644)
+	if err != nil {
+		return err
 	}
 	return nil
 }

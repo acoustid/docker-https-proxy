@@ -9,10 +9,10 @@ RUN apt-get update && \
     apt-get install -y nginx dumb-init software-properties-common && \
     add-apt-repository ppa:certbot/certbot && \
     apt-get update && \
-    apt-get install -y certbot
-
-RUN ln -sf /dev/stdout /var/log/nginx/access.log && \
+    apt-get install -y certbot && \
+    ln -sf /dev/stdout /var/log/nginx/access.log && \
     ln -sf /dev/stderr /var/log/nginx/error.log && \
+    mkdir /etc/nginx/sites && \
     mkdir /var/log/letsencrypt && \
     ln -sf /dev/stderr /var/log/letsencrypt/letsencrypt.log
 
