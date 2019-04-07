@@ -79,7 +79,6 @@ func (s *LetsEncryptServer) renewSslCerts() error {
 		"--non-interactive",
 		"--agree-tos",
 		"--max-log-backups", "0",
-		"--force-renewal",
 	)
 
 	log.Printf("starting certbot: %v %v", cmd.Path, cmd.Args)
@@ -129,6 +128,7 @@ func (s *LetsEncryptServer) processNewCertRequests() {
 				log.Printf("failed to renew certificates: %v", err)
 				continue
 			}
+			continue
 		}
 		if domain == "PING" {
 			continue
@@ -224,6 +224,13 @@ func (s *LetsEncryptServer) Run() error {
 	}
 
 	go s.processNewCertRequests()
+
+	go func() {
+		for {
+			s.newCertChannel <- "RENEW"
+			time.Sleep(1 * time.Hour)
+		}
+	}()
 
 	go func() {
 		for {
