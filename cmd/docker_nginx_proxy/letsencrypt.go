@@ -157,7 +157,8 @@ func (s *LetsEncryptServer) handleDump(writer http.ResponseWriter, request *http
 	ifModifiedSinceStr := request.Header.Get("If-Modified-Since")
 	if ifModifiedSinceStr != "" {
 		ifModifiedSince, err := http.ParseTime(ifModifiedSinceStr)
-		if err == nil {
+		if err != nil {
+			log.Printf("failed to parse If-Modified-Since date %v: %v", ifModifiedSinceStr, err)
 			if !s.lastModified.After(ifModifiedSince) {
 				writer.WriteHeader(http.StatusNotModified)
 				return

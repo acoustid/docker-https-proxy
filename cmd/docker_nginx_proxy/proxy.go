@@ -254,6 +254,10 @@ func (p *ProxyServer) downloadSslCerts() (bool, error) {
 	if resp.StatusCode == http.StatusNotModified {
 		return false, nil
 	}
+	if p.letsEncryptDataLastModified == resp.Header.Get("Last-Modified") {
+		// XXX temporary hack
+		return false, nil
+	}
 	p.letsEncryptDataLastModified = resp.Header.Get("Last-Modified")
 
 	log.Printf("downloading ssl certificates from %v to %v", dumpURL, nginxLetsEncryptConfigDir)
@@ -288,8 +292,8 @@ func (p *ProxyServer) updateSslCertsOneIter() (bool, error) {
 }
 
 func (p *ProxyServer) updateSslCerts(nginxProcess *os.Process) {
-	defaultSleepDuration := 1 * time.Minute
-	sleepDuration := defaultSleepDuration
+	defaultSleepDuration := 10 * time.Minute
+	sleepDuration := 1 * time.Minute
 	for {
 		time.Sleep(sleepDuration)
 		reload, err := p.updateSslCertsOneIter()
