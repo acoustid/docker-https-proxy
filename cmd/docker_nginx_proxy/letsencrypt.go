@@ -26,11 +26,16 @@ type LetsEncryptServer struct {
 	lastModified   time.Time
 }
 
+func lastModifiedNow() time.Time {
+	t, _ := http.ParseTime(time.Now().Format(http.TimeFormat))
+	return t
+}
+
 // NewLetsEncryptServer creates a new LetsEncryptServer instance
 func NewLetsEncryptServer() *LetsEncryptServer {
 	return &LetsEncryptServer{
 		newCertChannel: make(chan string),
-		lastModified:   time.Now(),
+		lastModified:   lastModifiedNow(),
 	}
 }
 
@@ -66,7 +71,7 @@ func (s *LetsEncryptServer) newSslCert(domain string) error {
 	log.Printf("starting certbot: %v %v", cmd.Path, cmd.Args)
 	output, err := cmd.CombinedOutput()
 	if err == nil {
-		s.lastModified = time.Now()
+		s.lastModified = lastModifiedNow()
 	}
 	log.Println(cmd.ProcessState.Success(), string(output))
 	return err
@@ -84,7 +89,7 @@ func (s *LetsEncryptServer) renewSslCerts() error {
 	log.Printf("starting certbot: %v %v", cmd.Path, cmd.Args)
 	output, err := cmd.CombinedOutput()
 	if err == nil {
-		s.lastModified = time.Now()
+		s.lastModified = lastModifiedNow()
 	}
 	log.Println(cmd.ProcessState.Success(), string(output))
 	return err
@@ -159,6 +164,8 @@ func (s *LetsEncryptServer) handleDump(writer http.ResponseWriter, request *http
 		ifModifiedSince, err := http.ParseTime(ifModifiedSinceStr)
 		if err != nil {
 			log.Printf("failed to parse If-Modified-Since date %v: %v", ifModifiedSinceStr, err)
+		} else {
+			log.Printf("comparing If-Modified-Since %v %v", ifModifiedSince, s.lastModified)
 			if !s.lastModified.After(ifModifiedSince) {
 				writer.WriteHeader(http.StatusNotModified)
 				return
