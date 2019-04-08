@@ -276,7 +276,7 @@ func (p *ProxyServer) downloadSslCerts() (bool, error) {
 	return true, nil
 }
 
-func (p *ProxyServer) updateSslCertsOneIter() (bool, error) {
+func (p *ProxyServer) updateSslCerts() (bool, error) {
 	newCertURL := fmt.Sprintf("http://%s:%d/new-cert", p.letsEncryptServerHost, letsEncryptServerPort)
 
 	for domain, sslCertInfo := range p.sslCerts {
@@ -291,12 +291,12 @@ func (p *ProxyServer) updateSslCertsOneIter() (bool, error) {
 	return p.downloadSslCerts()
 }
 
-func (p *ProxyServer) updateSslCerts(nginxProcess *os.Process) {
-	defaultSleepDuration := 10 * time.Minute
-	sleepDuration := 1 * time.Minute
+func (p *ProxyServer) updateSslCertsForever(nginxProcess *os.Process) {
+	defaultSleepDuration := 1 * time.Minute
+	sleepDuration := defaultSleepDuration
 	for {
 		time.Sleep(sleepDuration)
-		reload, err := p.updateSslCertsOneIter()
+		reload, err := p.updateSslCerts()
 		if err != nil {
 			sleepDuration = sleepDuration + sleepDuration/4
 			continue
@@ -344,7 +344,7 @@ func (p *ProxyServer) Run() error {
 	nginxCmd, err := p.startNginx()
 
 	go forwardSignals(signals, nginxCmd.Process)
-	go p.updateSslCerts(nginxCmd.Process)
+	go p.updateSslCertsForever(nginxCmd.Process)
 
 	err = nginxCmd.Wait()
 	if err != nil {
