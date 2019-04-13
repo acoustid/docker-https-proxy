@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -14,8 +15,89 @@ import (
 	"regexp"
 	"strings"
 	"syscall"
+	"text/template"
 	"time"
 )
+
+type siteInfo struct {
+	Domain      string `json:"domain"`
+	SSL         siteSSLInfo
+	LetsEncrypt siteLetsEncryptInfo
+	Backend     []siteBackendServerInfo `json:"backend"`
+}
+
+type siteSSLInfo struct {
+	Certificate string
+	PrivateKey  string
+}
+
+type siteLetsEncryptInfo struct {
+	Master siteLetsEncryptServerInfo
+}
+
+type siteLetsEncryptServerInfo struct {
+	Host string
+	Port int
+}
+
+type siteBackendServerInfo struct {
+	Host        string                     `json:"host"`
+	Port        int                        `json:"port"`
+	HealthCheck siteBackendHealthCheckInfo `json:"healthcheck"`
+}
+
+type siteBackendHealthCheckInfo struct {
+	Path string `json:"path"`
+}
+
+const nginxSiteTempate = `
+set ${{.Name}}_letsencrypt_server {{.LetsEncrypt.Master.Host}};
+set ${{.Name}}_backend_server {{.Backend.Host}};
+
+server {
+	listen 80;
+	listen [::]:80;
+
+	server_name {{.Domain}};
+
+	location /.well-known/acme-challenge {"
+		proxy_pass http://${{.Name}}_letsencrypt_server:{{.LetsEncrypt.Master.Port}};
+	}
+
+	location / {
+			return 302 https://$host$request_uri;
+	}
+}
+
+server {
+	listen 443 ssl;
+	listen [::]:443 ssl;
+
+	server_name {{.Domain}};
+
+	ssl_certificate {{.SSL.Certificate}};
+	ssl_certificate_key {{.SSL.PrivateKey}};
+
+	client_max_body_size 0;
+
+	location /.well-known/acme-challenge {"
+		proxy_pass http://${{.Name}}_letsencrypt_server:{{.LetsEncrypt.Master.Port}};
+	}
+
+	location / {
+					proxy_pass http://${{.Name}}_backend_server:{{.Backend.Port}};
+					proxy_set_header Host $http_host;
+					proxy_set_header X-Real-IP $remote_addr;
+					proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+					proxy_set_header X-Forwarded-Proto https;
+					proxy_set_header X-Forwarded-Ssl on;
+					proxy_read_timeout 3600;
+					proxy_connect_timeout 300;
+					proxy_redirect off;
+					proxy_http_version 1.1;
+	}
+}
+`
 
 const letsEncryptServerPort = 12812
 
@@ -55,17 +137,21 @@ func (i sslCertInfo) Validate() (bool, error) {
 	return certPathExists && privateKeyPathExists, nil
 }
 
+// ProxyServer is a nginx-based load balancer / proxy.
 type ProxyServer struct {
 	exitCh                      chan bool
 	nginxProcess                *os.Process
+	nginxsiteTmpl               *template.Template
 	sslCerts                    map[string]*sslCertInfo
 	letsEncryptServerHost       string
 	letsEncryptDataLastModified string
 }
 
+// NewProxyServer creates a new ProxyServer instance.
 func NewProxyServer() *ProxyServer {
 	return &ProxyServer{
-		exitCh: make(chan bool),
+		exitCh:        make(chan bool),
+		nginxsiteTmpl: template.Must(template.New("config").Parse(nginxSiteTempate)),
 	}
 }
 
@@ -131,20 +217,32 @@ func (p *ProxyServer) updateNginxConfFiles() error {
 	blockRe := regexp.MustCompile(`block=([^ ]+)`)
 	domainRe := regexp.MustCompile(`domain=([^ ]+)`)
 
-	var newLines []string
+	var config strings.Builder
 
 	for _, file := range files {
-		if !file.IsDir() && strings.HasSuffix(file.Name(), ".conf") {
-			filename := path.Join(nginxSitesDir, file.Name())
-			log.Printf("reading nginx config file %v", filename)
-
-			data, err := ioutil.ReadFile(filename)
+		if file.IsDir() {
+			continue
+		}
+		filename := path.Join(nginxSitesDir, file.Name())
+		log.Printf("reading nginx config file %v", filename)
+		data, err := ioutil.ReadFile(filename)
+		if err != nil {
+			log.Printf("failed to read %s: %v", filename, err)
+			return err
+		}
+		if strings.HasSuffix(file.Name(), ".json") {
+			var site siteInfo
+			err = json.Unmarshal(data, &site)
 			if err != nil {
-				log.Fatalf("failed to read %s: %v", filename, err)
+				return err
 			}
-
+			err = p.nginxsiteTmpl.Execute(&config, &site)
+			if err != nil {
+				return err
+			}
+		}
+		if strings.HasSuffix(file.Name(), ".conf") {
 			inBlock := false
-
 			lines := strings.Split(string(data), "\n")
 			for _, line := range lines {
 				startNewBlock := false
@@ -165,22 +263,19 @@ func (p *ProxyServer) updateNginxConfFiles() error {
 					inBlock = false
 				}
 				if !inBlock {
-					newLines = append(newLines, line)
+					config.WriteString(line)
+					config.WriteByte('\n')
 				}
 				if startNewBlock {
 					if block == "https" {
-						newLines = append(
-							newLines,
-							fmt.Sprintf("ssl_certificate %s;", p.getSslCertPath(domain)),
-							fmt.Sprintf("ssl_certificate_key %s;", p.getSslPrivateKeyPath(domain)),
-						)
+						config.WriteString(fmt.Sprintf("ssl_certificate %s;", p.getSslCertPath(domain)))
+						config.WriteString(fmt.Sprintf("ssl_certificate_key %s;", p.getSslPrivateKeyPath(domain)))
+						config.WriteRune('\n')
 					}
-					newLines = append(
-						newLines,
-						"location /.well-known/acme-challenge {",
-						fmt.Sprintf("  proxy_pass http://%s:%d;", p.letsEncryptServerHost, letsEncryptServerPort),
-						"}",
-					)
+					config.WriteString("location /.well-known/acme-challenge {")
+					config.WriteString(fmt.Sprintf("  proxy_pass http://%s:%d;", p.letsEncryptServerHost, letsEncryptServerPort))
+					config.WriteString("}")
+					config.WriteRune('\n')
 					if _, exists := p.sslCerts[domain]; !exists {
 						p.sslCerts[domain] = nil
 					}
@@ -192,7 +287,7 @@ func (p *ProxyServer) updateNginxConfFiles() error {
 		}
 	}
 
-	err = ioutil.WriteFile(nginxSitesConf, []byte(strings.Join(newLines, "\n")), 0644)
+	err = ioutil.WriteFile(nginxSitesConf, []byte(config.String()), 0644)
 	if err != nil {
 		return err
 	}
