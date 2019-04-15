@@ -78,6 +78,8 @@ type siteRouteInfo struct {
 }
 
 const nginxSiteTempate = `
+resolver {{.Resolver}};
+
 {{range .Site.Backends}}
 upstream {{$.Site.Name}}_backend_{{.Name}} {
 {{range .Servers -}}
@@ -90,8 +92,6 @@ server {
 	listen [::]:80;
 
 	server_name {{.Site.Domain}};
-
-	resolver {{.Resolver}};
 
 	location /.well-known/acme-challenge {
 		set ${{.Site.Name}}_letsencrypt_server {{.LetsEncrypt.Master.Host}};
@@ -108,8 +108,6 @@ server {
 	listen [::]:443 ssl;
 
 	server_name {{.Site.Domain}};
-
-	resolver {{.Resolver}};
 
 	ssl_certificate {{.Site.SSL.CertificatePath}};
 	ssl_certificate_key {{.Site.SSL.PrivateKeyPath}};
