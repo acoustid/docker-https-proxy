@@ -269,6 +269,8 @@ func (p *ProxyServer) updateNginxConfFiles() error {
 			if err != nil {
 				return err
 			}
+			site.SSL.CertificatePath = p.getSslCertPath(site.Domain)
+			site.SSL.PrivateKeyPath = p.getSslPrivateKeyPath(site.Domain)
 			ctx := &siteTemplateContext{
 				Site:        &site,
 				LetsEncrypt: p.letsEncrypt,
