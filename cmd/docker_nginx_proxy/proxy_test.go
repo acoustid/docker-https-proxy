@@ -16,8 +16,25 @@ func TestRenderSiteTemplate(t *testing.T) {
 			CertificatePath: "/etc/ssl/example.pem",
 			PrivateKeyPath:  "/etc/ssl/private/example.key",
 		},
-		Backends: []siteBackendServerInfo{
-			{Name: "srv1", Host: "srv1.example.com", Port: 8080},
+		Backends: []siteBackendInfo{
+			{
+				Name: "main",
+				Servers: []siteBackendServerInfo{
+					{
+						Host: "srv1.example.com",
+						Port: 8080,
+						HealthCheck: siteBackendHealthCheckInfo{
+							Path: "/_health",
+						},
+					},
+				},
+			},
+		},
+		Routes: []siteRouteInfo{
+			{
+				Path:    "/",
+				Backend: "main",
+			},
 		},
 	}
 	err := proxy.renderSiteTemplate(&builder, site)
@@ -26,7 +43,7 @@ func TestRenderSiteTemplate(t *testing.T) {
 	}
 	output := builder.String()
 	expectedOutput := `
-upstream example_backend {
+upstream example_backend_main {
 	server srv1.example.com:8080;
 }
 
@@ -67,7 +84,7 @@ server {
 	}
 
 	location / {
-		proxy_pass http://example_backend;
+		proxy_pass http://example_backend_main;
 		proxy_set_header Host $http_host;
 		proxy_set_header X-Real-IP $remote_addr;
 		proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

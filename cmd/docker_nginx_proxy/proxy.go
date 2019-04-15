@@ -43,7 +43,8 @@ type siteInfo struct {
 	Name     string `json:"name"`
 	Domain   string `json:"domain"`
 	SSL      sslCertInfo
-	Backends []siteBackendServerInfo `json:"backends"`
+	Backends []siteBackendInfo `json:"backend"`
+	Routes   []siteRouteInfo   `json:"routes"`
 }
 
 type letsEncryptInfo struct {
@@ -56,8 +57,12 @@ type letsEncryptServerInfo struct {
 	Port int
 }
 
+type siteBackendInfo struct {
+	Name    string
+	Servers []siteBackendServerInfo `json:"servers"`
+}
+
 type siteBackendServerInfo struct {
-	Name        string                     `json:"name"`
 	Host        string                     `json:"host"`
 	Port        int                        `json:"port"`
 	HealthCheck siteBackendHealthCheckInfo `json:"healthcheck"`
@@ -67,12 +72,19 @@ type siteBackendHealthCheckInfo struct {
 	Path string `json:"path"`
 }
 
+type siteRouteInfo struct {
+	Path    string `json:"path"`
+	Backend string `json:"backend"`
+}
+
 const nginxSiteTempate = `
-upstream {{.Site.Name}}_backend {
-{{range .Site.Backends -}}
+{{range .Site.Backends}}
+upstream {{$.Site.Name}}_backend_{{.Name}} {
+{{range .Servers -}}
 {{"\t"}}server {{.Host}}:{{.Port}};
 {{- end}}
 }
+{{- end}}
 
 server {
 	listen 80;
@@ -109,9 +121,9 @@ server {
 		set ${{.Site.Name}}_letsencrypt_server {{.LetsEncrypt.Master.Host}};
 		proxy_pass http://${{.Site.Name}}_letsencrypt_server:{{.LetsEncrypt.Master.Port}};
 	}
-
-	location / {
-		proxy_pass http://{{.Site.Name}}_backend;
+{{range .Site.Routes}}
+	location {{.Path}} {
+		proxy_pass http://{{$.Site.Name}}_backend_{{.Backend}};
 		proxy_set_header Host $http_host;
 		proxy_set_header X-Real-IP $remote_addr;
 		proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -122,6 +134,7 @@ server {
 		proxy_redirect off;
 		proxy_http_version 1.1;
 	}
+{{end -}}
 }
 `
 
@@ -268,6 +281,9 @@ func (p *ProxyServer) updateNginxConfFiles() error {
 			}
 			site.SSL.CertificatePath = p.getSslCertPath(site.Domain)
 			site.SSL.PrivateKeyPath = p.getSslPrivateKeyPath(site.Domain)
+			if len(site.Routes) == 0 {
+				site.Routes = append(site.Routes, siteRouteInfo{Path: "/", Backend: site.Backends[0].Name})
+			}
 			ctx := &siteTemplateContext{
 				Site:        &site,
 				LetsEncrypt: p.letsEncrypt,
