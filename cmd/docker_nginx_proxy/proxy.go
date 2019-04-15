@@ -58,14 +58,14 @@ type letsEncryptServerInfo struct {
 }
 
 type siteBackendInfo struct {
-	Name    string
-	Servers []siteBackendServerInfo `json:"servers"`
+	Name        string
+	Servers     []siteBackendServerInfo    `json:"servers"`
+	HealthCheck siteBackendHealthCheckInfo `json:"healthcheck"`
 }
 
 type siteBackendServerInfo struct {
-	Host        string                     `json:"host"`
-	Port        int                        `json:"port"`
-	HealthCheck siteBackendHealthCheckInfo `json:"healthcheck"`
+	Host string `json:"host"`
+	Port int    `json:"port"`
 }
 
 type siteBackendHealthCheckInfo struct {
@@ -84,8 +84,7 @@ upstream {{$.Site.Name}}_backend_{{.Name}} {
 {{"\t"}}server {{.Host}}:{{.Port}};
 {{- end}}
 }
-{{- end}}
-
+{{end}}
 server {
 	listen 80;
 	listen [::]:80;

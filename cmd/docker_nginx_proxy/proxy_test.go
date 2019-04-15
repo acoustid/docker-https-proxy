@@ -18,22 +18,38 @@ func TestRenderSiteTemplate(t *testing.T) {
 		},
 		Backends: []siteBackendInfo{
 			{
-				Name: "main",
+				Name: "web",
 				Servers: []siteBackendServerInfo{
 					{
 						Host: "srv1.example.com",
 						Port: 8080,
-						HealthCheck: siteBackendHealthCheckInfo{
-							Path: "/_health",
-						},
 					},
+				},
+				HealthCheck: siteBackendHealthCheckInfo{
+					Path: "/_health",
+				},
+			},
+			{
+				Name: "api",
+				Servers: []siteBackendServerInfo{
+					{
+						Host: "srv-api1.example.com",
+						Port: 8081,
+					},
+				},
+				HealthCheck: siteBackendHealthCheckInfo{
+					Path: "/_health",
 				},
 			},
 		},
 		Routes: []siteRouteInfo{
 			{
+				Path:    "/api",
+				Backend: "api",
+			},
+			{
 				Path:    "/",
-				Backend: "main",
+				Backend: "web",
 			},
 		},
 	}
@@ -43,8 +59,12 @@ func TestRenderSiteTemplate(t *testing.T) {
 	}
 	output := builder.String()
 	expectedOutput := `
-upstream example_backend_main {
+upstream example_backend_web {
 	server srv1.example.com:8080;
+}
+
+upstream example_backend_api {
+	server srv-api1.example.com:8081;
 }
 
 server {
@@ -83,8 +103,21 @@ server {
 		proxy_pass http://$example_letsencrypt_server:12812;
 	}
 
+	location /api {
+		proxy_pass http://example_backend_api;
+		proxy_set_header Host $http_host;
+		proxy_set_header X-Real-IP $remote_addr;
+		proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+		proxy_set_header X-Forwarded-Proto https;
+		proxy_set_header X-Forwarded-Ssl on;
+		proxy_read_timeout 3600;
+		proxy_connect_timeout 300;
+		proxy_redirect off;
+		proxy_http_version 1.1;
+	}
+
 	location / {
-		proxy_pass http://example_backend_main;
+		proxy_pass http://example_backend_web;
 		proxy_set_header Host $http_host;
 		proxy_set_header X-Real-IP $remote_addr;
 		proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
