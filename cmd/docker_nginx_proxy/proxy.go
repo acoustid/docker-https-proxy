@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -19,28 +20,44 @@ import (
 	"time"
 )
 
+const defaultLetsEncryptServerHost = "localhost"
+const defaultLetsEncryptServerPort = 12812
+
+const nginxLetsEncryptConfigDir = "/etc/nginx/letsencrypt/"
+const nginxMainConfFile = "/etc/nginx/nginx.conf"
+const nginxSitesDir = "/etc/nginx/sites/"
+const nginxSitesConf = "/etc/nginx/conf.d/50-sites.conf"
+
+const snakeoilSslCert = "/etc/ssl/certs/ssl-cert-snakeoil.pem"
+const snakeoilSslPrivateKey = "/etc/ssl/private/ssl-cert-snakeoil.key"
+
+const resolverHost = "127.0.0.11"
+
+type siteTemplateContext struct {
+	Site        *siteInfo
+	LetsEncrypt *letsEncryptInfo
+	Resolver    string
+}
+
 type siteInfo struct {
-	Domain      string `json:"domain"`
-	SSL         siteSSLInfo
-	LetsEncrypt siteLetsEncryptInfo
-	Backend     []siteBackendServerInfo `json:"backend"`
+	Name     string `json:"name"`
+	Domain   string `json:"domain"`
+	SSL      sslCertInfo
+	Backends []siteBackendServerInfo `json:"backends"`
 }
 
-type siteSSLInfo struct {
-	Certificate string
-	PrivateKey  string
+type letsEncryptInfo struct {
+	Master       letsEncryptServerInfo
+	lastModified string
 }
 
-type siteLetsEncryptInfo struct {
-	Master siteLetsEncryptServerInfo
-}
-
-type siteLetsEncryptServerInfo struct {
+type letsEncryptServerInfo struct {
 	Host string
 	Port int
 }
 
 type siteBackendServerInfo struct {
+	Name        string                     `json:"name"`
 	Host        string                     `json:"host"`
 	Port        int                        `json:"port"`
 	HealthCheck siteBackendHealthCheckInfo `json:"healthcheck"`
@@ -51,21 +68,31 @@ type siteBackendHealthCheckInfo struct {
 }
 
 const nginxSiteTempate = `
-set ${{.Name}}_letsencrypt_server {{.LetsEncrypt.Master.Host}};
-set ${{.Name}}_backend_server {{.Backend.Host}};
+set ${{.Site.Name}}_letsencrypt_server {{.LetsEncrypt.Master.Host}};
+{{range .Site.Backends -}}
+set ${{$.Site.Name}}_backend_server_{{.Name}} {{.Host}};
+{{- end}}
+
+upstream ${{.Site.Name}}_backend {
+{{range .Site.Backends -}}
+{{"\t"}}server ${{$.Site.Name}}_backend_server_{{.Name}}:{{.Port}};
+{{- end}}
+}
 
 server {
 	listen 80;
 	listen [::]:80;
 
-	server_name {{.Domain}};
+	server_name {{.Site.Domain}};
 
-	location /.well-known/acme-challenge {"
-		proxy_pass http://${{.Name}}_letsencrypt_server:{{.LetsEncrypt.Master.Port}};
+	resolver {{.Resolver}};
+
+	location /.well-known/acme-challenge {
+		proxy_pass http://${{.Site.Name}}_letsencrypt_server:{{.LetsEncrypt.Master.Port}};
 	}
 
 	location / {
-			return 302 https://$host$request_uri;
+		return 302 https://$host$request_uri;
 	}
 }
 
@@ -73,45 +100,37 @@ server {
 	listen 443 ssl;
 	listen [::]:443 ssl;
 
-	server_name {{.Domain}};
+	server_name {{.Site.Domain}};
 
-	ssl_certificate {{.SSL.Certificate}};
-	ssl_certificate_key {{.SSL.PrivateKey}};
+	resolver {{.Resolver}};
+
+	ssl_certificate {{.Site.SSL.CertificatePath}};
+	ssl_certificate_key {{.Site.SSL.PrivateKeyPath}};
 
 	client_max_body_size 0;
 
-	location /.well-known/acme-challenge {"
-		proxy_pass http://${{.Name}}_letsencrypt_server:{{.LetsEncrypt.Master.Port}};
+	location /.well-known/acme-challenge {
+		proxy_pass http://${{.Site.Name}}_letsencrypt_server:{{.LetsEncrypt.Master.Port}};
 	}
 
 	location / {
-					proxy_pass http://${{.Name}}_backend_server:{{.Backend.Port}};
-					proxy_set_header Host $http_host;
-					proxy_set_header X-Real-IP $remote_addr;
-					proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-					proxy_set_header X-Forwarded-Proto https;
-					proxy_set_header X-Forwarded-Ssl on;
-					proxy_read_timeout 3600;
-					proxy_connect_timeout 300;
-					proxy_redirect off;
-					proxy_http_version 1.1;
+		proxy_pass http://${{.Site.Name}}_backend;
+		proxy_set_header Host $http_host;
+		proxy_set_header X-Real-IP $remote_addr;
+		proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+		proxy_set_header X-Forwarded-Proto https;
+		proxy_set_header X-Forwarded-Ssl on;
+		proxy_read_timeout 3600;
+		proxy_connect_timeout 300;
+		proxy_redirect off;
+		proxy_http_version 1.1;
 	}
 }
 `
 
-const letsEncryptServerPort = 12812
-
-const nginxLetsEncryptConfigDir = "/etc/nginx/letsencrypt/"
-const nginxMainConfFile = "/etc/nginx/nginx.conf"
-const nginxSitesDir = "/etc/nginx/sites/"
-const nginxSitesConf = "/etc/nginx/conf.d/50-sites.conf"
-
-const snakeoilSslCert = "/etc/ssl/certs/ssl-cert-snakeoil.pem"
-const snakeoilSslPrivateKey = "/etc/ssl/private/ssl-cert-snakeoil.key"
-
 type sslCertInfo struct {
-	certPath       string
-	privateKeyPath string
+	CertificatePath string
+	PrivateKeyPath  string
 }
 
 func checkIfPathExists(path string) (bool, error) {
@@ -126,11 +145,11 @@ func checkIfPathExists(path string) (bool, error) {
 }
 
 func (i sslCertInfo) Validate() (bool, error) {
-	certPathExists, err := checkIfPathExists(i.certPath)
+	certPathExists, err := checkIfPathExists(i.CertificatePath)
 	if err != nil {
 		return false, err
 	}
-	privateKeyPathExists, err := checkIfPathExists(i.privateKeyPath)
+	privateKeyPathExists, err := checkIfPathExists(i.PrivateKeyPath)
 	if err != nil {
 		return false, err
 	}
@@ -139,12 +158,11 @@ func (i sslCertInfo) Validate() (bool, error) {
 
 // ProxyServer is a nginx-based load balancer / proxy.
 type ProxyServer struct {
-	exitCh                      chan bool
-	nginxProcess                *os.Process
-	nginxsiteTmpl               *template.Template
-	sslCerts                    map[string]*sslCertInfo
-	letsEncryptServerHost       string
-	letsEncryptDataLastModified string
+	exitCh        chan bool
+	nginxProcess  *os.Process
+	nginxsiteTmpl *template.Template
+	sslCerts      map[string]*sslCertInfo
+	letsEncrypt   *letsEncryptInfo
 }
 
 // NewProxyServer creates a new ProxyServer instance.
@@ -152,6 +170,12 @@ func NewProxyServer() *ProxyServer {
 	return &ProxyServer{
 		exitCh:        make(chan bool),
 		nginxsiteTmpl: template.Must(template.New("config").Parse(nginxSiteTempate)),
+		letsEncrypt: &letsEncryptInfo{
+			Master: letsEncryptServerInfo{
+				Host: defaultLetsEncryptServerHost,
+				Port: defaultLetsEncryptServerPort,
+			},
+		},
 	}
 }
 
@@ -160,7 +184,7 @@ func (p *ProxyServer) getSslCertPath(domain string) string {
 	if info == nil {
 		return snakeoilSslCert
 	}
-	return info.certPath
+	return info.CertificatePath
 }
 
 func (p *ProxyServer) getSslPrivateKeyPath(domain string) string {
@@ -168,7 +192,7 @@ func (p *ProxyServer) getSslPrivateKeyPath(domain string) string {
 	if info == nil {
 		return snakeoilSslPrivateKey
 	}
-	return info.privateKeyPath
+	return info.PrivateKeyPath
 }
 
 func (p *ProxyServer) loadSslCerts() error {
@@ -187,8 +211,8 @@ func (p *ProxyServer) loadSslCerts() error {
 		if entry.IsDir() {
 			domain := entry.Name()
 			info := &sslCertInfo{
-				certPath:       path.Join(sslCertDir, domain, "fullchain.pem"),
-				privateKeyPath: path.Join(sslCertDir, domain, "privkey.pem"),
+				CertificatePath: path.Join(sslCertDir, domain, "fullchain.pem"),
+				PrivateKeyPath:  path.Join(sslCertDir, domain, "privkey.pem"),
 			}
 			valid, err := info.Validate()
 			if err != nil {
@@ -200,6 +224,15 @@ func (p *ProxyServer) loadSslCerts() error {
 		}
 	}
 	return nil
+}
+
+func (p *ProxyServer) renderSiteTemplate(writer io.Writer, site *siteInfo) error {
+	ctx := &siteTemplateContext{
+		Site:        site,
+		LetsEncrypt: p.letsEncrypt,
+		Resolver:    resolverHost,
+	}
+	return p.nginxsiteTmpl.Execute(writer, ctx)
 }
 
 func (p *ProxyServer) updateNginxConfFiles() error {
@@ -236,7 +269,12 @@ func (p *ProxyServer) updateNginxConfFiles() error {
 			if err != nil {
 				return err
 			}
-			err = p.nginxsiteTmpl.Execute(&config, &site)
+			ctx := &siteTemplateContext{
+				Site:        &site,
+				LetsEncrypt: p.letsEncrypt,
+				Resolver:    resolverHost,
+			}
+			err = p.nginxsiteTmpl.Execute(&config, ctx)
 			if err != nil {
 				return err
 			}
@@ -273,7 +311,7 @@ func (p *ProxyServer) updateNginxConfFiles() error {
 						config.WriteRune('\n')
 					}
 					config.WriteString("location /.well-known/acme-challenge {")
-					config.WriteString(fmt.Sprintf("  proxy_pass http://%s:%d;", p.letsEncryptServerHost, letsEncryptServerPort))
+					config.WriteString(fmt.Sprintf("  proxy_pass http://%s:%d;", p.letsEncrypt.Master.Host, p.letsEncrypt.Master.Port))
 					config.WriteString("}")
 					config.WriteRune('\n')
 					if _, exists := p.sslCerts[domain]; !exists {
@@ -326,13 +364,13 @@ func (p *ProxyServer) downloadSslCerts() (bool, error) {
 		return false, err
 	}
 
-	dumpURL := fmt.Sprintf("http://%s:%d/dump", p.letsEncryptServerHost, letsEncryptServerPort)
+	dumpURL := fmt.Sprintf("http://%s:%d/dump", p.letsEncrypt.Master.Host, p.letsEncrypt.Master.Port)
 	req, err := http.NewRequest("GET", dumpURL, nil)
 	if err != nil {
 		return false, err
 	}
-	if p.letsEncryptDataLastModified != "" {
-		req.Header.Set("If-Modified-Since", p.letsEncryptDataLastModified)
+	if p.letsEncrypt.lastModified != "" {
+		req.Header.Set("If-Modified-Since", p.letsEncrypt.lastModified)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -349,14 +387,13 @@ func (p *ProxyServer) downloadSslCerts() (bool, error) {
 	if resp.StatusCode == http.StatusNotModified {
 		return false, nil
 	}
-	if p.letsEncryptDataLastModified == resp.Header.Get("Last-Modified") {
+	if p.letsEncrypt.lastModified == resp.Header.Get("Last-Modified") {
 		// XXX temporary hack
 		return false, nil
 	}
-	p.letsEncryptDataLastModified = resp.Header.Get("Last-Modified")
+	p.letsEncrypt.lastModified = resp.Header.Get("Last-Modified")
 
 	log.Printf("downloading ssl certificates from %v to %v", dumpURL, nginxLetsEncryptConfigDir)
-	log.Printf("ssl certificates were last modified at %v", p.letsEncryptDataLastModified)
 
 	cmd := exec.Command("tar", "-x", "-C", nginxLetsEncryptConfigDir)
 	cmd.Stdin = bytes.NewReader(data)
@@ -364,7 +401,7 @@ func (p *ProxyServer) downloadSslCerts() (bool, error) {
 	cmd.Stderr = os.Stderr
 	err = cmd.Run()
 	if err != nil {
-		log.Print("failed to extract letsencrypt config: %v", err)
+		log.Printf("failed to extract letsencrypt config: %v", err)
 		return false, err
 	}
 
@@ -372,7 +409,7 @@ func (p *ProxyServer) downloadSslCerts() (bool, error) {
 }
 
 func (p *ProxyServer) updateSslCerts() (bool, error) {
-	newCertURL := fmt.Sprintf("http://%s:%d/new-cert", p.letsEncryptServerHost, letsEncryptServerPort)
+	newCertURL := fmt.Sprintf("http://%s:%d/new-cert", p.letsEncrypt.Master.Host, p.letsEncrypt.Master.Port)
 
 	for domain, sslCertInfo := range p.sslCerts {
 		if sslCertInfo != nil {
@@ -417,10 +454,11 @@ func (p *ProxyServer) updateSslCertsForever(nginxProcess *os.Process) {
 
 // Run the ProxyServer
 func (p *ProxyServer) Run() error {
-	p.letsEncryptServerHost = os.Getenv("LETSENCRYPT_SERVER_HOST")
-	if p.letsEncryptServerHost == "" {
+	letsEncryptServerHost := os.Getenv("LETSENCRYPT_SERVER_HOST")
+	if letsEncryptServerHost == "" {
 		return fmt.Errorf("LETSENCRYPT_SERVER_HOST missing or empty")
 	}
+	p.letsEncrypt.Master.Host = letsEncryptServerHost
 
 	_, err := p.downloadSslCerts()
 	if err != nil {

@@ -201,12 +201,12 @@ func (s *LetsEncryptServer) handleNewCert(writer http.ResponseWriter, request *h
 
 	exists, err := s.checkIfCertExists(domain)
 	if err != nil {
-		log.Print("failed to check if certificate for %s already exists: %v", domain, err)
+		log.Printf("failed to check if certificate for %s already exists: %v", domain, err)
 		writer.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	if exists {
-		log.Print("certificate for %s already exists, skipping", domain)
+		log.Printf("certificate for %s already exists, skipping", domain)
 		writer.WriteHeader(http.StatusOK)
 		writer.Write([]byte("already exists"))
 		return
@@ -252,6 +252,6 @@ func (s *LetsEncryptServer) Run() error {
 	mux.HandleFunc("/new-cert", s.handleNewCert)
 	mux.Handle("/.well-known/acme-challenge/", http.FileServer(http.Dir(certbotWebRootDir)))
 
-	server := &http.Server{Addr: fmt.Sprintf(":%d", letsEncryptServerPort), Handler: mux}
+	server := &http.Server{Addr: fmt.Sprintf(":%d", defaultLetsEncryptServerPort), Handler: mux}
 	return server.ListenAndServe()
 }
