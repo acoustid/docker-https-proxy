@@ -26,11 +26,8 @@ func TestRenderSiteTemplate(t *testing.T) {
 	}
 	output := builder.String()
 	expectedOutput := `
-set $example_letsencrypt_server localhost;
-set $example_backend_server_srv1 srv1.example.com;
-
-upstream $example_backend {
-	server $example_backend_server_srv1:8080;
+upstream example_backend {
+	server srv1.example.com:8080;
 }
 
 server {
@@ -42,6 +39,7 @@ server {
 	resolver 127.0.0.11;
 
 	location /.well-known/acme-challenge {
+		set $example_letsencrypt_server localhost;
 		proxy_pass http://$example_letsencrypt_server:12812;
 	}
 
@@ -64,11 +62,12 @@ server {
 	client_max_body_size 0;
 
 	location /.well-known/acme-challenge {
+		set $example_letsencrypt_server localhost;
 		proxy_pass http://$example_letsencrypt_server:12812;
 	}
 
 	location / {
-		proxy_pass http://$example_backend;
+		proxy_pass http://example_backend;
 		proxy_set_header Host $http_host;
 		proxy_set_header X-Real-IP $remote_addr;
 		proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

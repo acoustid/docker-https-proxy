@@ -68,14 +68,9 @@ type siteBackendHealthCheckInfo struct {
 }
 
 const nginxSiteTempate = `
-set ${{.Site.Name}}_letsencrypt_server {{.LetsEncrypt.Master.Host}};
+upstream {{.Site.Name}}_backend {
 {{range .Site.Backends -}}
-set ${{$.Site.Name}}_backend_server_{{.Name}} {{.Host}};
-{{- end}}
-
-upstream ${{.Site.Name}}_backend {
-{{range .Site.Backends -}}
-{{"\t"}}server ${{$.Site.Name}}_backend_server_{{.Name}}:{{.Port}};
+{{"\t"}}server {{.Host}}:{{.Port}};
 {{- end}}
 }
 
@@ -88,6 +83,7 @@ server {
 	resolver {{.Resolver}};
 
 	location /.well-known/acme-challenge {
+		set ${{.Site.Name}}_letsencrypt_server {{.LetsEncrypt.Master.Host}};
 		proxy_pass http://${{.Site.Name}}_letsencrypt_server:{{.LetsEncrypt.Master.Port}};
 	}
 
@@ -110,11 +106,12 @@ server {
 	client_max_body_size 0;
 
 	location /.well-known/acme-challenge {
+		set ${{.Site.Name}}_letsencrypt_server {{.LetsEncrypt.Master.Host}};
 		proxy_pass http://${{.Site.Name}}_letsencrypt_server:{{.LetsEncrypt.Master.Port}};
 	}
 
 	location / {
-		proxy_pass http://${{.Site.Name}}_backend;
+		proxy_pass http://{{.Site.Name}}_backend;
 		proxy_set_header Host $http_host;
 		proxy_set_header X-Real-IP $remote_addr;
 		proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
