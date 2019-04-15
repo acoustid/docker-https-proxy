@@ -73,8 +73,6 @@ server {
 
 	server_name example.com;
 
-	resolver 127.0.0.11;
-
 	location /.well-known/acme-challenge {
 		set $example_letsencrypt_server localhost;
 		proxy_pass http://$example_letsencrypt_server:12812;
@@ -90,8 +88,6 @@ server {
 	listen [::]:443 ssl;
 
 	server_name example.com;
-
-	resolver 127.0.0.11;
 
 	ssl_certificate /etc/ssl/example.pem;
 	ssl_certificate_key /etc/ssl/private/example.key;

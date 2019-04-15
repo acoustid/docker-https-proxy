@@ -31,12 +31,9 @@ const nginxSitesConf = "/etc/nginx/conf.d/50-sites.conf"
 const snakeoilSslCert = "/etc/ssl/certs/ssl-cert-snakeoil.pem"
 const snakeoilSslPrivateKey = "/etc/ssl/private/ssl-cert-snakeoil.key"
 
-const resolverHost = "127.0.0.11"
-
 type siteTemplateContext struct {
 	Site        *siteInfo
 	LetsEncrypt *letsEncryptInfo
-	Resolver    string
 }
 
 type siteInfo struct {
@@ -78,8 +75,6 @@ type siteRouteInfo struct {
 }
 
 const nginxSiteTempate = `
-resolver {{.Resolver}};
-
 {{range .Site.Backends}}
 upstream {{$.Site.Name}}_backend_{{.Name}} {
 {{range .Servers -}}
@@ -237,7 +232,6 @@ func (p *ProxyServer) renderSiteTemplate(writer io.Writer, site *siteInfo) error
 	ctx := &siteTemplateContext{
 		Site:        site,
 		LetsEncrypt: p.letsEncrypt,
-		Resolver:    resolverHost,
 	}
 	return p.nginxsiteTmpl.Execute(writer, ctx)
 }
@@ -284,7 +278,6 @@ func (p *ProxyServer) updateNginxConfFiles() error {
 			ctx := &siteTemplateContext{
 				Site:        &site,
 				LetsEncrypt: p.letsEncrypt,
-				Resolver:    resolverHost,
 			}
 			err = p.nginxsiteTmpl.Execute(&config, ctx)
 			if err != nil {
