@@ -23,10 +23,7 @@ const defaultLetsEncryptServerPort = 12812
 
 const nginxLetsEncryptConfigDir = "/etc/nginx/letsencrypt/"
 const nginxMainConfFile = "/etc/nginx/nginx.conf"
-const nginxSitesDir = "/etc/nginx/sites/"
 const nginxSitesConf = "/etc/nginx/conf.d/50-sites.conf"
-
-const defaultNginxResolver = "127.0.0.11"
 
 const snakeoilSslCert = "/etc/ssl/certs/ssl-cert-snakeoil.pem"
 const snakeoilSslPrivateKey = "/etc/ssl/private/ssl-cert-snakeoil.key"
@@ -75,7 +72,7 @@ type siteRouteInfo struct {
 }
 
 const nginxConfTempate = `
-resolver {{.NginxResolver}};
+resolver {{.Resolver}};
 
 upstream letsencrypt_master {
 	server {{.LetsEncrypt.Master.Host}}:{{.LetsEncrypt.Master.Port}};
@@ -167,13 +164,14 @@ func (i sslCertInfo) Validate() (bool, error) {
 
 // ProxyServer is a nginx-based load balancer / proxy.
 type ProxyServer struct {
-	exitCh        chan bool
-	nginxProcess  *os.Process
-	nginxConfTpl  *template.Template
-	sslCerts      map[string]sslCertInfo
-	Sites         []*siteInfo
-	LetsEncrypt   *letsEncryptInfo
-	NginxResolver string
+	exitCh       chan bool
+	nginxProcess *os.Process
+	nginxConfTpl *template.Template
+	sslCerts     map[string]sslCertInfo
+	Sites        []*siteInfo
+	SitesDir     string
+	LetsEncrypt  *letsEncryptInfo
+	Resolver     string
 }
 
 // NewProxyServer creates a new ProxyServer instance.
@@ -181,13 +179,14 @@ func NewProxyServer() *ProxyServer {
 	return &ProxyServer{
 		exitCh:       make(chan bool),
 		nginxConfTpl: template.Must(template.New("config").Parse(nginxConfTempate)),
+		Resolver:     defaultResolver,
+		SitesDir:     defaultSitesDir,
 		LetsEncrypt: &letsEncryptInfo{
 			Master: letsEncryptServerInfo{
 				Host: defaultLetsEncryptServerHost,
 				Port: defaultLetsEncryptServerPort,
 			},
 		},
-		NginxResolver: defaultNginxResolver,
 	}
 }
 
@@ -241,7 +240,7 @@ func (p *ProxyServer) updateNginxConfFiles() error {
 		return err
 	}
 
-	files, err := ioutil.ReadDir(nginxSitesDir)
+	files, err := ioutil.ReadDir(p.SitesDir)
 	if err != nil {
 		return err
 	}
@@ -251,25 +250,26 @@ func (p *ProxyServer) updateNginxConfFiles() error {
 		if file.IsDir() {
 			continue
 		}
-		filename := path.Join(nginxSitesDir, file.Name())
-		log.Printf("reading nginx config file %v", filename)
-		data, err := ioutil.ReadFile(filename)
+		if !strings.HasSuffix(file.Name(), ".json") {
+			continue
+		}
+		path := path.Join(p.SitesDir, file.Name())
+		log.Printf("reading site config %v", path)
+		data, err := ioutil.ReadFile(path)
 		if err != nil {
-			log.Printf("failed to read %s: %v", filename, err)
+			log.Printf("failed to read site config %s: %v", path, err)
 			return err
 		}
-		if strings.HasSuffix(file.Name(), ".json") {
-			var site siteInfo
-			err = json.Unmarshal(data, &site)
-			if err != nil {
-				return err
-			}
-			site.SSL = p.lookupSslCertInfo(site.Domain)
-			if len(site.Routes) == 0 {
-				site.Routes = append(site.Routes, siteRouteInfo{Path: "/", Backend: site.Backends[0].Name})
-			}
-			p.Sites = append(p.Sites, &site)
+		var site siteInfo
+		err = json.Unmarshal(data, &site)
+		if err != nil {
+			return err
 		}
+		err = p.validateAndNormalizeSite(&site)
+		if err != nil {
+			return err
+		}
+		p.Sites = append(p.Sites, &site)
 	}
 
 	const tmpNginxSitesConf = nginxSitesConf + ".tmp"
@@ -290,6 +290,14 @@ func (p *ProxyServer) updateNginxConfFiles() error {
 		return err
 	}
 
+	return nil
+}
+
+func (p *ProxyServer) validateAndNormalizeSite(site *siteInfo) error {
+	site.SSL = p.lookupSslCertInfo(site.Domain)
+	if len(site.Routes) == 0 {
+		site.Routes = append(site.Routes, siteRouteInfo{Path: "/", Backend: site.Backends[0].Name})
+	}
 	return nil
 }
 
@@ -416,15 +424,15 @@ func (p *ProxyServer) updateSslCertsForever(nginxProcess *os.Process) {
 
 // Run the ProxyServer
 func (p *ProxyServer) Run() error {
-	letsEncryptServerHost := os.Getenv("LETSENCRYPT_SERVER_HOST")
+	letsEncryptServerHost := os.Getenv("PROXY_LETSENCRYPT_SERVER_HOST")
 	if letsEncryptServerHost == "" {
-		return fmt.Errorf("LETSENCRYPT_SERVER_HOST missing or empty")
+		return fmt.Errorf("PROXY_LETSENCRYPT_SERVER_HOST missing or empty")
 	}
 	p.LetsEncrypt.Master.Host = letsEncryptServerHost
 
-	nginxResolver := os.Getenv("NGINX_RESOLVER")
-	if nginxResolver != "" {
-		p.NginxResolver = nginxResolver
+	resolver := os.Getenv("PROXY_RESOLVER")
+	if resolver != "" {
+		p.Resolver = resolver
 	}
 
 	_, err := p.downloadSslCerts()
