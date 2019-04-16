@@ -40,7 +40,7 @@ type siteInfo struct {
 	Name     string `json:"name"`
 	Domain   string `json:"domain"`
 	SSL      sslCertInfo
-	Backends []siteBackendInfo `json:"backend"`
+	Backends []siteBackendInfo `json:"backends"`
 	Routes   []siteRouteInfo   `json:"routes"`
 }
 
