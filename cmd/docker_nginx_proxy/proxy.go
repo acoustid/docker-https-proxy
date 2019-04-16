@@ -330,6 +330,8 @@ func (p *ProxyServer) updateNginxConfFiles() error {
 		}
 	}
 
+	log.Print(config.String())
+
 	err = ioutil.WriteFile(nginxSitesConf, []byte(config.String()), 0644)
 	if err != nil {
 		return err
