@@ -14,7 +14,6 @@ RUN apt-get update && \
     ln -sf /dev/stderr /var/log/nginx/error.log && \
     mkdir /etc/nginx/sites
 
-ADD 00-nginx-resolver.conf /etc/nginx/conf.d/00-nginx-resolver.conf
 COPY --from=builder /go/src/github.com/acoustid/docker-https-proxy/docker_https_proxy /usr/local/bin/
 
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
