@@ -13,7 +13,7 @@ else
   PREV_VERSION=$CI_COMMIT_REF_SLUG
 fi
 
-docker pull $IMAGE:$PREV_VERSION
+docker pull $IMAGE:$PREV_VERSION || true
 docker build --cache-from=$IMAGE:$PREV_VERSION -t $IMAGE:$VERSION .
 docker push $IMAGE:$VERSION
 
