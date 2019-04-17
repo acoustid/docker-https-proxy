@@ -21,17 +21,9 @@ import (
 const defaultLetsEncryptServerHost = "localhost"
 const defaultLetsEncryptServerPort = 12812
 
-const nginxLetsEncryptConfigDir = "/etc/nginx/letsencrypt/"
-const nginxMainConfFile = "/etc/nginx/nginx.conf"
-const nginxSitesConf = "/etc/nginx/conf.d/50-sites.conf"
-
-const snakeoilSslCert = "/etc/ssl/certs/ssl-cert-snakeoil.pem"
-const snakeoilSslPrivateKey = "/etc/ssl/private/ssl-cert-snakeoil.key"
-
-type siteTemplateContext struct {
-	Site        *siteInfo
-	LetsEncrypt *letsEncryptInfo
-}
+const haproxyLetsEncryptDir = "/etc/haproxy/letsencrypt/"
+const haproxySSLDir = "/etc/haproxy/ssl/"
+const haproxyConfigFile = "/etc/haproxy/haproxy.cfg"
 
 type siteInfo struct {
 	Name     string `json:"name"`
@@ -71,7 +63,7 @@ type siteRouteInfo struct {
 	Backend string `json:"backend"`
 }
 
-const nginxConfTempate = `
+const haproxyConfigTemplate = `
 resolver {{.Resolver}};
 
 upstream letsencrypt_master {
@@ -162,25 +154,26 @@ func (i sslCertInfo) Validate() (bool, error) {
 	return certPathExists && privateKeyPathExists, nil
 }
 
-// ProxyServer is a nginx-based load balancer / proxy.
+// ProxyServer is a HAProxy-based load balancer.
 type ProxyServer struct {
-	exitCh       chan bool
-	nginxProcess *os.Process
-	nginxConfTpl *template.Template
-	sslCerts     map[string]sslCertInfo
-	Sites        []*siteInfo
-	SitesDir     string
-	LetsEncrypt  *letsEncryptInfo
-	Resolver     string
+	exitCh            chan bool
+	haproxy           *HAProxy
+	haproxyConfigTmpl *template.Template
+	sslCerts          map[string]sslCertInfo
+	Sites             []*siteInfo
+	SitesDir          string
+	LetsEncrypt       *letsEncryptInfo
+	Resolver          string
 }
 
 // NewProxyServer creates a new ProxyServer instance.
 func NewProxyServer() *ProxyServer {
 	return &ProxyServer{
-		exitCh:       make(chan bool),
-		nginxConfTpl: template.Must(template.New("config").Parse(nginxConfTempate)),
-		Resolver:     defaultResolver,
-		SitesDir:     defaultSitesDir,
+		exitCh:            make(chan bool),
+		haproxy:           NewHAProxy(haproxyConfigFile),
+		haproxyConfigTmpl: template.Must(template.New("config").Parse(haproxyConfigTemplate)),
+		Resolver:          defaultResolver,
+		SitesDir:          defaultSitesDir,
 		LetsEncrypt: &letsEncryptInfo{
 			Master: letsEncryptServerInfo{
 				Host: defaultLetsEncryptServerHost,
@@ -202,7 +195,7 @@ func (p *ProxyServer) lookupSslCertInfo(domain string) sslCertInfo {
 }
 
 func (p *ProxyServer) loadSslCerts() error {
-	sslCertDir := path.Join(nginxLetsEncryptConfigDir, "live")
+	sslCertDir := path.Join(haproxyLetsEncryptDir, "live")
 	entries, err := ioutil.ReadDir(sslCertDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -233,7 +226,7 @@ func (p *ProxyServer) loadSslCerts() error {
 	return nil
 }
 
-func (p *ProxyServer) updateNginxConfFiles() error {
+func (p *ProxyServer) updateHAProxyConfigFile() error {
 	err := p.loadSslCerts()
 	if err != nil {
 		log.Printf("failed to load SSL certificates: %v", err)
@@ -272,20 +265,20 @@ func (p *ProxyServer) updateNginxConfFiles() error {
 		p.Sites = append(p.Sites, &site)
 	}
 
-	const tmpNginxSitesConf = nginxSitesConf + ".tmp"
-	f, err := os.Create(tmpNginxSitesConf)
+	const tmpHaproxyConfigFile = haproxyConfigFile + ".tmp"
+	f, err := os.Create(tmpHaproxyConfigFile)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	defer os.Remove(tmpNginxSitesConf)
+	defer os.Remove(tmpHaproxyConfigFile)
 
-	err = p.nginxConfTpl.Execute(f, p)
+	err = p.haproxyConfigTmpl.Execute(f, p)
 	if err != nil {
 		return err
 	}
 
-	err = os.Rename(tmpNginxSitesConf, nginxSitesConf)
+	err = os.Rename(tmpHaproxyConfigFile, haproxyConfigFile)
 	if err != nil {
 		return err
 	}
@@ -301,35 +294,26 @@ func (p *ProxyServer) validateAndNormalizeSite(site *siteInfo) error {
 	return nil
 }
 
-func (p *ProxyServer) startNginx() (*exec.Cmd, error) {
-	cmd := exec.Command("nginx", "-c", nginxMainConfFile, "-g", "daemon off;")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	log.Printf("starting nginx: %v %v", cmd.Path, cmd.Args)
-	err := cmd.Start()
-	if err != nil {
-		return nil, err
-	}
-
-	log.Printf("nginx running with PID %d", cmd.Process.Pid)
-	return cmd, nil
-}
-
-func forwardSignals(signals <-chan os.Signal, process *os.Process) {
+func (p *ProxyServer) handleSignals(signals <-chan os.Signal) {
+	var err error
 	for sig := range signals {
-		log.Printf("forwarding signal %s to PID %d", sig, process.Pid)
-		err := process.Signal(sig)
+		if sig == syscall.SIGINT {
+			err = p.haproxy.Stop()
+		} else if sig == syscall.SIGTERM {
+			err = p.haproxy.Kill()
+		} else if sig == syscall.SIGHUP {
+			err = p.haproxy.Reload()
+		}
 		if err != nil {
-			log.Printf("failed to forward signal %s to PID %d: %v", sig, process.Pid, err)
+			log.Printf("failed to forward signal %s to haproxy: %v", sig, err)
 		}
 	}
 }
 
 func (p *ProxyServer) downloadSslCerts() (bool, error) {
-	err := os.MkdirAll(nginxLetsEncryptConfigDir, 0755)
+	err := os.MkdirAll(haproxyLetsEncryptDir, 0755)
 	if err != nil {
-		log.Printf("failed to create %s: %v", nginxLetsEncryptConfigDir, err)
+		log.Printf("failed to create %s: %v", haproxyLetsEncryptDir, err)
 		return false, err
 	}
 
@@ -362,9 +346,9 @@ func (p *ProxyServer) downloadSslCerts() (bool, error) {
 	}
 	p.LetsEncrypt.lastModified = resp.Header.Get("Last-Modified")
 
-	log.Printf("downloading ssl certificates from %v to %v", dumpURL, nginxLetsEncryptConfigDir)
+	log.Printf("downloading ssl certificates from %v to %v", dumpURL, haproxyLetsEncryptDir)
 
-	cmd := exec.Command("tar", "-x", "-C", nginxLetsEncryptConfigDir)
+	cmd := exec.Command("tar", "-x", "-C", haproxyLetsEncryptDir)
 	cmd.Stdin = bytes.NewReader(data)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -393,7 +377,7 @@ func (p *ProxyServer) updateSslCerts() (bool, error) {
 	return p.downloadSslCerts()
 }
 
-func (p *ProxyServer) updateSslCertsForever(nginxProcess *os.Process) {
+func (p *ProxyServer) updateSslCertsForever() {
 	defaultSleepDuration := 1 * time.Minute
 	sleepDuration := defaultSleepDuration
 	for {
@@ -404,16 +388,15 @@ func (p *ProxyServer) updateSslCertsForever(nginxProcess *os.Process) {
 			continue
 		}
 		if reload {
-			err = p.updateNginxConfFiles()
+			err = p.updateHAProxyConfigFile()
 			if err != nil {
-				log.Print("failed to update nginx config files")
+				log.Printf("failed to update haproxy config file: %v", err)
 				sleepDuration = sleepDuration + sleepDuration/4
 				continue
 			}
-			log.Printf("sending SIGHUP to nginx with PID %d", nginxProcess.Pid)
-			err = nginxProcess.Signal(syscall.SIGHUP)
+			err = p.haproxy.Reload()
 			if err != nil {
-				log.Print("failed to reload nginx")
+				log.Printf("failed to reload haproxy: %v", err)
 				sleepDuration = sleepDuration + sleepDuration/4
 				continue
 			}
@@ -440,26 +423,30 @@ func (p *ProxyServer) Run() error {
 		log.Print("failed to download ssl certificates")
 	}
 
-	err = p.updateNginxConfFiles()
+	err = p.updateHAProxyConfigFile()
 	if err != nil {
-		log.Print("failed to update nginx config files")
+		log.Printf("failed to create haproxy config file: %v", err)
 		return err
 	}
 
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 
-	nginxCmd, err := p.startNginx()
-
-	go forwardSignals(signals, nginxCmd.Process)
-	go p.updateSslCertsForever(nginxCmd.Process)
-
-	err = nginxCmd.Wait()
+	err = p.haproxy.Start()
 	if err != nil {
-		log.Printf("nginx finished with error: %v", err)
+		log.Printf("failed to start haproxy: %v", err)
 		return err
 	}
 
-	log.Print("nginx finished")
+	go p.handleSignals(signals)
+	go p.updateSslCertsForever()
+
+	err = p.haproxy.Wait()
+	if err != nil {
+		log.Printf("haproxy finished with error: %v", err)
+		return err
+	}
+
+	log.Print("haproxy finished")
 	return nil
 }

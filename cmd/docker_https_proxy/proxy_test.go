@@ -81,7 +81,7 @@ func TestRenderTemplate(t *testing.T) {
 		},
 	})
 	var builder strings.Builder
-	err := proxy.nginxConfTpl.Execute(&builder, proxy)
+	err := proxy.haproxyConfigTmpl.Execute(&builder, proxy)
 	if err != nil {
 		t.Errorf("renderSiteTemplate failed: %v", err)
 	}
