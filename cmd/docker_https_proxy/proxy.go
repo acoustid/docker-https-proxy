@@ -75,13 +75,13 @@ defaults
 	timeout server 1h
 
 resolvers main
-	nameserver dns1 {{$.Resolver}}
+	nameserver dns1 {{$.Resolver}}:53
 
 frontend fe_http
 	bind *:80
 	acl is_letsencrypt path_beg /.well-known/acme-challenge
+	redirect scheme https code 301 if !is_letsencrypt
 	use_backend be_letsencrypt if is_letsencrypt
-	redirect scheme https code 301
 
 frontend fe_https
 	bind *:443 ssl crt {{$.SSLDir}}
@@ -394,6 +394,45 @@ func (p *ProxyServer) updateSslCertsForever() {
 	}
 }
 
+func (p *ProxyServer) mergeCertificateFiles(name string, certificatePath string, privateKeyPath string) error {
+	certificatData, err := ioutil.ReadFile(certificatePath)
+	if err != nil {
+		return err
+	}
+	privateKeyData, err := ioutil.ReadFile(privateKeyPath)
+	if err != nil {
+		return err
+	}
+
+	mergedPath := path.Join(p.SSLDir, name+".pem")
+	f, err := os.Create(mergedPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.Write(certificatData)
+	if err != nil {
+		os.Remove(mergedPath)
+		return err
+	}
+	_, err = f.WriteString("\n")
+	if err != nil {
+		os.Remove(mergedPath)
+		return err
+	}
+	_, err = f.Write(privateKeyData)
+	if err != nil {
+		os.Remove(mergedPath)
+		return err
+	}
+	_, err = f.WriteString("\n")
+	if err != nil {
+		os.Remove(mergedPath)
+		return err
+	}
+	return nil
+}
+
 // Run the ProxyServer
 func (p *ProxyServer) Run() error {
 	letsEncryptServerHost := os.Getenv("PROXY_LETSENCRYPT_SERVER_HOST")
@@ -407,7 +446,23 @@ func (p *ProxyServer) Run() error {
 		p.Resolver = resolver
 	}
 
-	_, err := p.downloadSslCerts()
+	var err error
+
+	err = os.MkdirAll(p.SitesDir, 0755)
+	if err != nil {
+		return err
+	}
+	err = os.MkdirAll(p.SSLDir, 0700)
+	if err != nil {
+		return err
+	}
+
+	err = p.mergeCertificateFiles("00-snakeoil", snakeoilSslCert, snakeoilSslPrivateKey)
+	if err != nil {
+		return err
+	}
+
+	_, err = p.downloadSslCerts()
 	if err != nil {
 		log.Print("failed to download ssl certificates")
 	}
