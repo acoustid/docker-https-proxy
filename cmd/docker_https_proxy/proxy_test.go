@@ -87,127 +87,56 @@ func TestRenderTemplate(t *testing.T) {
 	}
 	output := builder.String()
 	expectedOutput := `
-resolver 127.0.0.11;
+global
+	maxconn 1024
 
-upstream letsencrypt_master {
-	server localhost:12812;
-}
+defaults
+	log global
+	mode http
+	timeout connect 60s
+	timeout client 1h
+	timeout server 1h
 
+resolvers main
+	nameserver dns1 127.0.0.11
 
+frontend fe_http
+	bind *:80
+	acl is_letsencrypt path_beg /.well-known/acme-challenge
+	use_backend be_letsencrypt if is_letsencrypt
+	redirect scheme https code 301
 
-upstream example_backend_web {
-	server srv1.example.com:8080;
-}
+frontend fe_https
+	bind *:443 ssl crt /etc/haproxy/ssl/
+	acl is_letsencrypt path_beg /.well-known/acme-challenge
+	use_backend be_letsencrypt if is_letsencrypt
+	acl is_from_example req.ssl_sni -m dom example.com
+	use_backend backend_example_api if { is_from_example path_beg /api }
+	use_backend backend_example_web if { is_from_example path_beg / }
+	acl is_from_example2 req.ssl_sni -m dom example2.com
+	use_backend backend_example2_default if { is_from_example2 path_beg / }
 
-upstream example_backend_api {
-	server srv-api1.example.com:8081;
-}
+backend be_letsencrypt
+	balance roundrobin
+	server-template srv 100 localhost:12812 check resolvers main
 
-server {
-	listen 80;
-	listen [::]:80;
+backend be_example_web
+	balance roundrobin
+	option httpchk GET /_health
+	http-check expect status 200
+	server-template srv0 100 srv1.example.com:8080 check resolvers main
 
-	server_name example.com;
+backend be_example_api
+	balance roundrobin
+	option httpchk GET /_health
+	http-check expect status 200
+	server-template srv0 100 srv-api1.example.com:8081 check resolvers main
 
-	location /.well-known/acme-challenge {
-		proxy_pass http://letsencrypt_master;
-	}
-
-	location / {
-		return 302 https://$host$request_uri;
-	}
-}
-
-server {
-	listen 443 ssl;
-	listen [::]:443 ssl;
-
-	server_name example.com;
-
-	ssl_certificate /etc/ssl/example.pem;
-	ssl_certificate_key /etc/ssl/private/example.key;
-
-	client_max_body_size 0;
-
-	location /.well-known/acme-challenge {
-		proxy_pass http://letsencrypt_master;
-	}
-
-	location /api {
-		proxy_pass http://example_backend_api;
-		proxy_set_header Host $http_host;
-		proxy_set_header X-Real-IP $remote_addr;
-		proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-		proxy_set_header X-Forwarded-Proto https;
-		proxy_set_header X-Forwarded-Ssl on;
-		proxy_read_timeout 3600;
-		proxy_connect_timeout 300;
-		proxy_redirect off;
-		proxy_http_version 1.1;
-	}
-
-	location / {
-		proxy_pass http://example_backend_web;
-		proxy_set_header Host $http_host;
-		proxy_set_header X-Real-IP $remote_addr;
-		proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-		proxy_set_header X-Forwarded-Proto https;
-		proxy_set_header X-Forwarded-Ssl on;
-		proxy_read_timeout 3600;
-		proxy_connect_timeout 300;
-		proxy_redirect off;
-		proxy_http_version 1.1;
-	}
-}
-
-
-upstream example2_backend_default {
-	server srv1.example2.com:8090;
-}
-
-server {
-	listen 80;
-	listen [::]:80;
-
-	server_name example2.com;
-
-	location /.well-known/acme-challenge {
-		proxy_pass http://letsencrypt_master;
-	}
-
-	location / {
-		return 302 https://$host$request_uri;
-	}
-}
-
-server {
-	listen 443 ssl;
-	listen [::]:443 ssl;
-
-	server_name example2.com;
-
-	ssl_certificate /etc/ssl/example2.pem;
-	ssl_certificate_key /etc/ssl/private/example2.key;
-
-	client_max_body_size 0;
-
-	location /.well-known/acme-challenge {
-		proxy_pass http://letsencrypt_master;
-	}
-
-	location / {
-		proxy_pass http://example2_backend_default;
-		proxy_set_header Host $http_host;
-		proxy_set_header X-Real-IP $remote_addr;
-		proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-		proxy_set_header X-Forwarded-Proto https;
-		proxy_set_header X-Forwarded-Ssl on;
-		proxy_read_timeout 3600;
-		proxy_connect_timeout 300;
-		proxy_redirect off;
-		proxy_http_version 1.1;
-	}
-}
+backend be_example2_default
+	balance roundrobin
+	option httpchk GET /_health
+	http-check expect status 200
+	server-template srv0 100 srv1.example2.com:8090 check resolvers main
 `
 
 	assertLongStringEqual(t, output, expectedOutput)

@@ -64,65 +64,51 @@ type siteRouteInfo struct {
 }
 
 const haproxyConfigTemplate = `
-resolver {{.Resolver}};
+global
+	maxconn 1024
 
-upstream letsencrypt_master {
-	server {{.LetsEncrypt.Master.Host}}:{{.LetsEncrypt.Master.Port}};
-}
+defaults
+	log global
+	mode http
+	timeout connect 60s
+	timeout client 1h
+	timeout server 1h
 
-{{range $site := .Sites}}
-{{range .Backends}}
-upstream {{$site.Name}}_backend_{{.Name}} {
-{{range .Servers -}}
-{{"\t"}}server {{.Host}}:{{.Port}};
+resolvers main
+	nameserver dns1 {{$.Resolver}}
+
+frontend fe_http
+	bind *:80
+	acl is_letsencrypt path_beg /.well-known/acme-challenge
+	use_backend be_letsencrypt if is_letsencrypt
+	redirect scheme https code 301
+
+frontend fe_https
+	bind *:443 ssl crt {{$.SSLDir}}
+	acl is_letsencrypt path_beg /.well-known/acme-challenge
+	use_backend be_letsencrypt if is_letsencrypt
+{{range $site := .Sites -}}
+{{"\t"}}acl is_from_{{.Name}} req.ssl_sni -m dom {{$site.Domain}}
+{{range .Routes -}}
+{{"\t"}}use_backend backend_{{$site.Name}}_{{.Backend}} if { is_from_{{$site.Name}} path_beg {{.Path}} }
+{{end}}
 {{- end}}
-}
-{{end}}
-server {
-	listen 80;
-	listen [::]:80;
-
-	server_name {{.Domain}};
-
-	location /.well-known/acme-challenge {
-		proxy_pass http://letsencrypt_master;
-	}
-
-	location / {
-		return 302 https://$host$request_uri;
-	}
-}
-
-server {
-	listen 443 ssl;
-	listen [::]:443 ssl;
-
-	server_name {{.Domain}};
-
-	ssl_certificate {{.SSL.CertificatePath}};
-	ssl_certificate_key {{.SSL.PrivateKeyPath}};
-
-	client_max_body_size 0;
-
-	location /.well-known/acme-challenge {
-		proxy_pass http://letsencrypt_master;
-	}
-{{range .Routes}}
-	location {{.Path}} {
-		proxy_pass http://{{$site.Name}}_backend_{{.Backend}};
-		proxy_set_header Host $http_host;
-		proxy_set_header X-Real-IP $remote_addr;
-		proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-		proxy_set_header X-Forwarded-Proto https;
-		proxy_set_header X-Forwarded-Ssl on;
-		proxy_read_timeout 3600;
-		proxy_connect_timeout 300;
-		proxy_redirect off;
-		proxy_http_version 1.1;
-	}
+backend be_letsencrypt
+	balance roundrobin
+	server-template srv 100 {{.LetsEncrypt.Master.Host}}:{{.LetsEncrypt.Master.Port}} check resolvers main
+{{range $site := .Sites -}}
+{{range $backend := .Backends}}
+backend be_{{$site.Name}}_{{.Name}}
+	balance roundrobin
+{{- if .HealthCheck.Path}}
+	option httpchk GET {{.HealthCheck.Path}}
+	http-check expect status 200
 {{end -}}
-}
-{{end}}
+{{range $i, $server := .Servers -}}
+{{"\t"}}server-template srv{{$i}} 100 {{.Host}}:{{.Port}} check resolvers main
+{{end -}}
+{{end -}}
+{{end -}}
 `
 
 type sslCertInfo struct {
@@ -164,22 +150,25 @@ type ProxyServer struct {
 	SitesDir          string
 	LetsEncrypt       *letsEncryptInfo
 	Resolver          string
+	SSLDir            string
 }
 
 // NewProxyServer creates a new ProxyServer instance.
 func NewProxyServer() *ProxyServer {
+	le := &letsEncryptInfo{
+		Master: letsEncryptServerInfo{
+			Host: defaultLetsEncryptServerHost,
+			Port: defaultLetsEncryptServerPort,
+		},
+	}
 	return &ProxyServer{
 		exitCh:            make(chan bool),
 		haproxy:           NewHAProxy(haproxyConfigFile),
 		haproxyConfigTmpl: template.Must(template.New("config").Parse(haproxyConfigTemplate)),
 		Resolver:          defaultResolver,
 		SitesDir:          defaultSitesDir,
-		LetsEncrypt: &letsEncryptInfo{
-			Master: letsEncryptServerInfo{
-				Host: defaultLetsEncryptServerHost,
-				Port: defaultLetsEncryptServerPort,
-			},
-		},
+		LetsEncrypt:       le,
+		SSLDir:            haproxySSLDir,
 	}
 }
 
