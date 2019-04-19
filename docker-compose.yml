@@ -12,6 +12,7 @@ services:
     build: .
     environment:
       PROXY_LETSENCRYPT_SERVER_HOST: letsencrypt
+      PROXY_HTTP_LOG: 1
     ports:
       - "127.0.0.1:80:80"
       - "127.0.0.1:443:443"

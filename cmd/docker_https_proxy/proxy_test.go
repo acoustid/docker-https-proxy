@@ -80,6 +80,7 @@ func TestRenderTemplate(t *testing.T) {
 			},
 		},
 	})
+	proxy.EnableHTTPLog = true
 	var builder strings.Builder
 	err := proxy.haproxyConfigTmpl.Execute(&builder, proxy)
 	if err != nil {
@@ -89,22 +90,25 @@ func TestRenderTemplate(t *testing.T) {
 	expectedOutput := `
 global
 	maxconn 1024
+	log stderr format raw daemon notice
+	tune.ssl.default-dh-param 2048
 
 defaults
-	log global
 	mode http
 	timeout connect 60s
 	timeout client 1h
 	timeout server 1h
+	log stdout format raw daemon
+	option httplog
 
 resolvers main
-	nameserver dns1 127.0.0.11
+	nameserver dns1 127.0.0.11:53
 
 frontend fe_http
 	bind *:80
 	acl is_letsencrypt path_beg /.well-known/acme-challenge
+	redirect scheme https code 301 if !is_letsencrypt
 	use_backend be_letsencrypt if is_letsencrypt
-	redirect scheme https code 301
 
 frontend fe_https
 	bind *:443 ssl crt /etc/haproxy/ssl/

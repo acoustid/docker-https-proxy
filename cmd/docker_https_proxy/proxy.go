@@ -66,13 +66,18 @@ type siteRouteInfo struct {
 const haproxyConfigTemplate = `
 global
 	maxconn 1024
+	log stderr format raw daemon notice
+	tune.ssl.default-dh-param 2048
 
 defaults
-	log global
 	mode http
 	timeout connect 60s
 	timeout client 1h
 	timeout server 1h
+	log stdout format raw daemon
+{{- if .EnableHTTPLog}}
+	option httplog
+{{- end}}
 
 resolvers main
 	nameserver dns1 {{$.Resolver}}:53
@@ -151,6 +156,7 @@ type ProxyServer struct {
 	LetsEncrypt       *letsEncryptInfo
 	Resolver          string
 	SSLDir            string
+	EnableHTTPLog     bool
 }
 
 // NewProxyServer creates a new ProxyServer instance.
@@ -207,6 +213,10 @@ func (p *ProxyServer) loadSslCerts() error {
 				return err
 			}
 			if valid {
+				err = p.mergeCertificateFiles(domain, info.CertificatePath, info.PrivateKeyPath)
+				if err != nil {
+					return err
+				}
 				info.Valid = true
 				p.sslCerts[domain] = info
 			}
@@ -444,6 +454,10 @@ func (p *ProxyServer) Run() error {
 	resolver := os.Getenv("PROXY_RESOLVER")
 	if resolver != "" {
 		p.Resolver = resolver
+	}
+
+	if IsTrueValue(os.Getenv("PROXY_HTTP_LOG")) {
+		p.EnableHTTPLog = true
 	}
 
 	var err error

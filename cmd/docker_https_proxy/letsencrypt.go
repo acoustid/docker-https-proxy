@@ -86,6 +86,10 @@ func (s *LetsEncryptServer) renewSslCerts() error {
 		"--max-log-backups", "0",
 	)
 
+	if s.dryRun {
+		cmd.Args = append(cmd.Args, "--dry-run")
+	}
+
 	log.Printf("starting certbot: %v %v", cmd.Path, cmd.Args)
 	output, err := cmd.CombinedOutput()
 	if err == nil {
