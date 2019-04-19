@@ -220,7 +220,11 @@ func (s *LetsEncryptServer) handleNewCert(writer http.ResponseWriter, request *h
 
 	writer.WriteHeader(http.StatusOK)
 	writer.Write([]byte("ok"))
-	return
+}
+
+func (s *LetsEncryptServer) handleHealth(writer http.ResponseWriter, request *http.Request) {
+	writer.WriteHeader(http.StatusOK)
+	writer.Write([]byte("ok"))
 }
 
 // Run the LetsEncryptServer
@@ -254,6 +258,7 @@ func (s *LetsEncryptServer) Run() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/dump", s.handleDump)
 	mux.HandleFunc("/new-cert", s.handleNewCert)
+	mux.HandleFunc("/_health", s.handleHealth)
 	mux.Handle("/.well-known/acme-challenge/", http.FileServer(http.Dir(certbotWebRootDir)))
 
 	server := &http.Server{Addr: fmt.Sprintf(":%d", defaultLetsEncryptServerPort), Handler: mux}

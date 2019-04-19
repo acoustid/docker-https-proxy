@@ -100,6 +100,8 @@ frontend fe_https
 {{- end}}
 backend be_letsencrypt
 	balance roundrobin
+	option httpchk GET /_health
+	http-check expect status 200
 	server-template srv 100 {{.LetsEncrypt.Master.Host}}:{{.LetsEncrypt.Master.Port}} check resolvers main
 {{range $site := .Sites -}}
 {{range $backend := .Backends}}
