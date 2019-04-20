@@ -13,6 +13,9 @@ services:
     environment:
       PROXY_LETSENCRYPT_SERVER_HOST: letsencrypt
       PROXY_HTTP_LOG: 1
+      PROXY_SHUTDOWN_DELAY: 1s
+    stop_signal: SIGINT
+    stop_grace_period: 20s
     ports:
       - "127.0.0.1:80:80"
       - "127.0.0.1:443:443"

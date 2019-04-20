@@ -18,9 +18,6 @@ import (
 	"time"
 )
 
-const defaultLetsEncryptServerHost = "localhost"
-const defaultLetsEncryptServerPort = 12812
-
 const haproxyLetsEncryptDir = "/etc/haproxy/letsencrypt/"
 const haproxySSLDir = "/etc/haproxy/ssl/"
 const haproxyConfigFile = "/etc/haproxy/haproxy.cfg"
@@ -159,6 +156,8 @@ type ProxyServer struct {
 	Resolver          string
 	SSLDir            string
 	EnableHTTPLog     bool
+	shutdown          bool
+	shutdownDelay     time.Duration
 }
 
 // NewProxyServer creates a new ProxyServer instance.
@@ -299,8 +298,16 @@ func (p *ProxyServer) handleSignals(signals <-chan os.Signal) {
 	var err error
 	for sig := range signals {
 		if sig == syscall.SIGINT {
+			p.shutdown = true
+			log.Printf("disabling healthcheck")
+			time.Sleep(p.shutdownDelay)
+			log.Printf("stopping haproxy")
 			err = p.haproxy.Stop()
 		} else if sig == syscall.SIGTERM {
+			p.shutdown = true
+			log.Printf("disabling healthcheck")
+			time.Sleep(p.shutdownDelay)
+			log.Printf("killing haproxy")
 			err = p.haproxy.Kill()
 		} else if sig == syscall.SIGHUP {
 			err = p.haproxy.Reload()
@@ -445,6 +452,18 @@ func (p *ProxyServer) mergeCertificateFiles(name string, certificatePath string,
 	return nil
 }
 
+func (p *ProxyServer) handleHealth(writer http.ResponseWriter, request *http.Request) {
+	writer.WriteHeader(http.StatusOK)
+	writer.Write([]byte("ok"))
+}
+
+func (p *ProxyServer) runUtilsServer() error {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/_health", p.handleHealth)
+	server := &http.Server{Addr: fmt.Sprintf(":%d", defaultProxyUtilsServerPort), Handler: mux}
+	return server.ListenAndServe()
+}
+
 // Run the ProxyServer
 func (p *ProxyServer) Run() error {
 	letsEncryptServerHost := os.Getenv("PROXY_LETSENCRYPT_SERVER_HOST")
@@ -460,6 +479,16 @@ func (p *ProxyServer) Run() error {
 
 	if IsTrueValue(os.Getenv("PROXY_HTTP_LOG")) {
 		p.EnableHTTPLog = true
+	}
+
+	shutdownDelayStr := os.Getenv("PROXY_SHUTDOWN_DELAY")
+	if shutdownDelayStr != "" {
+		shutdownDelay, err := time.ParseDuration(shutdownDelayStr)
+		if err != nil {
+			return fmt.Errorf("failed to read PROXY_SHUTDOWN_DELAY: %v", err)
+		}
+		log.Printf("will delay shutdown by %v", shutdownDelay)
+		p.shutdownDelay = shutdownDelay
 	}
 
 	var err error
@@ -500,6 +529,7 @@ func (p *ProxyServer) Run() error {
 
 	go p.handleSignals(signals)
 	go p.updateSslCertsForever()
+	go p.runUtilsServer()
 
 	err = p.haproxy.Wait()
 	if err != nil {

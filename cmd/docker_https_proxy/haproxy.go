@@ -17,6 +17,9 @@ func NewHAProxy(configPath string) *HAProxy {
 	cmd := exec.Command("haproxy", "-f", configPath, "-W")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid: true,
+	}
 	return &HAProxy{cmd: cmd}
 }
 
