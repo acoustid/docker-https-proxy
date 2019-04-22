@@ -68,9 +68,6 @@ func TestRenderTemplate(t *testing.T) {
 						Port: 8090,
 					},
 				},
-				HealthCheck: siteBackendHealthCheckInfo{
-					Path: "/_health",
-				},
 			},
 		},
 		Routes: []siteRouteInfo{
@@ -104,6 +101,7 @@ defaults
 resolvers main
 	nameserver dns1 127.0.0.11:53
 
+
 frontend fe_http
 	bind *:80
 	acl is_letsencrypt path_beg /.well-known/acme-challenge
@@ -123,29 +121,30 @@ frontend fe_https
 	acl route_example2_0 path_beg /
 	use_backend be_example2_default if domain_example2 route_example2_0
 
+
 backend be_letsencrypt
 	balance roundrobin
 	option httpchk GET /_health
 	http-check expect status 200
-	server-template srv 100 localhost:12812 check resolvers main
+	server-template srv_ 100 localhost:12812 check resolvers main
+
 
 backend be_example_web
 	balance roundrobin
 	option httpchk GET /_health
 	http-check expect status 200
-	server-template srv0 100 srv1.example.com:8080 check resolvers main
+	server-template srv_0_ 100 srv1.example.com:8080 check resolvers main
 
 backend be_example_api
 	balance roundrobin
 	option httpchk GET /_health
 	http-check expect status 200
-	server-template srv0 100 srv-api1.example.com:8081 check resolvers main
+	server-template srv_0_ 100 srv-api1.example.com:8081 check resolvers main
+
 
 backend be_example2_default
 	balance roundrobin
-	option httpchk GET /_health
-	http-check expect status 200
-	server-template srv0 100 srv1.example2.com:8090 check resolvers main
+	server-template srv_0_ 100 srv1.example2.com:8090 check resolvers main
 `
 
 	assertLongStringEqual(t, output, expectedOutput)

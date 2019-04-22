@@ -79,6 +79,7 @@ defaults
 resolvers main
 	nameserver dns1 {{$.Resolver}}:53
 
+
 frontend fe_http
 	bind *:80
 	acl is_letsencrypt path_beg /.well-known/acme-challenge
@@ -96,11 +97,13 @@ frontend fe_https
 {{"\t"}}use_backend be_{{$site.Name}}_{{.Backend}} if domain_{{$site.Name}} route_{{$site.Name}}_{{$i}}
 {{end}}
 {{- end}}
+
 backend be_letsencrypt
 	balance roundrobin
 	option httpchk GET /_health
 	http-check expect status 200
-	server-template srv 100 {{.LetsEncrypt.Master.Host}}:{{.LetsEncrypt.Master.Port}} check resolvers main
+	server-template srv_ 100 {{.LetsEncrypt.Master.Host}}:{{.LetsEncrypt.Master.Port}} check resolvers main
+
 {{range $site := .Sites -}}
 {{range $backend := .Backends}}
 backend be_{{$site.Name}}_{{.Name}}
@@ -108,12 +111,12 @@ backend be_{{$site.Name}}_{{.Name}}
 {{- if .HealthCheck.Path}}
 	option httpchk GET {{.HealthCheck.Path}}
 	http-check expect status 200
-{{end -}}
-{{range $i, $server := .Servers -}}
-{{"\t"}}server-template srv{{$i}} 100 {{.Host}}:{{.Port}} check resolvers main
-{{end -}}
-{{end -}}
-{{end -}}
+{{- end}}
+{{- range $i, $server := .Servers}}
+{{"\t"}}server-template srv_{{$i}}_ 100 {{.Host}}:{{.Port}} check resolvers main
+{{- end}}
+{{end}}
+{{end}}
 `
 
 type sslCertInfo struct {
