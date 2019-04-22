@@ -91,7 +91,7 @@ frontend fe_https
 	use_backend be_letsencrypt if is_letsencrypt
 {{range $site := .Sites -}}
 {{range .Routes -}}
-{{"\t"}}use_backend backend_{{$site.Name}}_{{.Backend}} if { req.ssl_sni -m dom {{$site.Domain}} path_beg {{.Path}} }
+{{"\t"}}use_backend be_{{$site.Name}}_{{.Backend}} if { req.ssl_sni -m dom {{$site.Domain}} path_beg {{.Path}} }
 {{end}}
 {{- end}}
 backend be_letsencrypt
