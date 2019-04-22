@@ -114,14 +114,14 @@ frontend fe_https
 	bind *:443 ssl crt /etc/haproxy/ssl/
 	acl is_letsencrypt path_beg /.well-known/acme-challenge
 	use_backend be_letsencrypt if is_letsencrypt
-	acl is_from_example req.ssl_sni -m dom example.com
-	use_backend backend_example_api if { is_from_example path_beg /api }
-	use_backend backend_example_web if { is_from_example path_beg / }
-	acl is_from_example2 req.ssl_sni -m dom example2.com
-	use_backend backend_example2_default if { is_from_example2 path_beg / }
+	use_backend backend_example_api if { req.ssl_sni -m dom example.com path_beg /api }
+	use_backend backend_example_web if { req.ssl_sni -m dom example.com path_beg / }
+	use_backend backend_example2_default if { req.ssl_sni -m dom example2.com path_beg / }
 
 backend be_letsencrypt
 	balance roundrobin
+	option httpchk GET /_health
+	http-check expect status 200
 	server-template srv 100 localhost:12812 check resolvers main
 
 backend be_example_web
