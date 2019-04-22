@@ -90,8 +90,10 @@ frontend fe_https
 	acl is_letsencrypt path_beg /.well-known/acme-challenge
 	use_backend be_letsencrypt if is_letsencrypt
 {{range $site := .Sites -}}
-{{range .Routes -}}
-{{"\t"}}use_backend be_{{$site.Name}}_{{.Backend}} if { req_ssl_sni -i {{$site.Domain}} path_beg {{.Path}} }
+{{"\t"}}acl domain_{{.Name}} req_ssl_sni -i {{$site.Domain}}
+{{range $i, $route := .Routes -}}
+{{"\t"}}acl route_{{$site.Name}}_{{$i}} path_beg {{.Path}}
+{{"\t"}}use_backend be_{{$site.Name}}_{{.Backend}} if domain_{{$site.Name}} route_{{$site.Name}}_{{$i}}
 {{end}}
 {{- end}}
 backend be_letsencrypt

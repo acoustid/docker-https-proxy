@@ -114,9 +114,14 @@ frontend fe_https
 	bind *:443 ssl crt /etc/haproxy/ssl/
 	acl is_letsencrypt path_beg /.well-known/acme-challenge
 	use_backend be_letsencrypt if is_letsencrypt
-	use_backend be_example_api if { req_ssl_sni -i example.com path_beg /api }
-	use_backend be_example_web if { req_ssl_sni -i example.com path_beg / }
-	use_backend be_example2_default if { req_ssl_sni -i example2.com path_beg / }
+	acl domain_example req_ssl_sni -i example.com
+	acl route_example_0 path_beg /api
+	use_backend be_example_api if domain_example route_example_0
+	acl route_example_1 path_beg /
+	use_backend be_example_web if domain_example route_example_1
+	acl domain_example2 req_ssl_sni -i example2.com
+	acl route_example2_0 path_beg /
+	use_backend be_example2_default if domain_example2 route_example2_0
 
 backend be_letsencrypt
 	balance roundrobin
