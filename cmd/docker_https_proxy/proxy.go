@@ -23,11 +23,12 @@ const haproxySSLDir = "/etc/haproxy/ssl/"
 const haproxyConfigFile = "/etc/haproxy/haproxy.cfg"
 
 type siteInfo struct {
-	Name     string `json:"name"`
-	Domain   string `json:"domain"`
-	SSL      sslCertInfo
-	Backends []siteBackendInfo `json:"backends"`
-	Routes   []siteRouteInfo   `json:"routes"`
+	Name               string `json:"name"`
+	Domain             string `json:"domain"`
+	DisableLetsEncrypt bool   `json:"disable_letsencrypt"`
+	SSL                sslCertInfo
+	Backends           []siteBackendInfo `json:"backends"`
+	Routes             []siteRouteInfo   `json:"routes"`
 }
 
 type letsEncryptInfo struct {
@@ -377,6 +378,9 @@ func (p *ProxyServer) updateSslCerts() (bool, error) {
 	newCertURL := fmt.Sprintf("http://%s:%d/new-cert", p.LetsEncrypt.Master.Host, p.LetsEncrypt.Master.Port)
 
 	for _, site := range p.Sites {
+		if site.DisableLetsEncrypt {
+			continue
+		}
 		sslCertInfo := p.sslCerts[site.Domain]
 		if sslCertInfo.Valid {
 			continue
