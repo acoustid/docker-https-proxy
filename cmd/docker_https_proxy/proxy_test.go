@@ -109,7 +109,7 @@ frontend fe_http
 	use_backend be_letsencrypt if is_letsencrypt
 
 frontend fe_https
-	bind *:443 ssl crt /etc/haproxy/ssl/
+	bind *:443 ssl crt /etc/haproxy/ssl/ alpn h2,http/1.1
 	acl is_letsencrypt path_beg /.well-known/acme-challenge
 	use_backend be_letsencrypt if is_letsencrypt
 	acl domain_example ssl_fc_sni -i example.com
