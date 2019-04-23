@@ -17,12 +17,17 @@ const certbotWebRootDir = "/tmp/letsencrypt/"
 const certbotEmailEnvName = "LETSENCRYPT_EMAIL"
 const certbotDryRunEnvName = "LETSENCRYPT_DRY_RUN"
 
+type newCertRequest struct {
+	domain     string
+	altDomains []string
+}
+
 // LetsEncryptServer represents a Let's Encrypt validation master server
 type LetsEncryptServer struct {
 	email          string
 	dryRun         bool
 	webroot        string
-	newCertChannel chan string
+	newCertChannel chan newCertRequest
 	lastModified   time.Time
 }
 
@@ -34,7 +39,7 @@ func lastModifiedNow() time.Time {
 // NewLetsEncryptServer creates a new LetsEncryptServer instance
 func NewLetsEncryptServer() *LetsEncryptServer {
 	return &LetsEncryptServer{
-		newCertChannel: make(chan string),
+		newCertChannel: make(chan newCertRequest),
 		lastModified:   lastModifiedNow(),
 	}
 }
@@ -51,7 +56,7 @@ func (s *LetsEncryptServer) parseEnv() error {
 	return nil
 }
 
-func (s *LetsEncryptServer) newSslCert(domain string) error {
+func (s *LetsEncryptServer) newSslCert(domain string, altDomains []string) error {
 	cmd := exec.Command(
 		"certbot",
 		"certonly",
@@ -63,6 +68,9 @@ func (s *LetsEncryptServer) newSslCert(domain string) error {
 		"--webroot-path", certbotWebRootDir,
 		"--domain", domain,
 	)
+	for _, altDomain := range altDomains {
+		cmd.Args = append(cmd.Args, "--domain", altDomain)
+	}
 
 	if s.dryRun {
 		cmd.Args = append(cmd.Args, "--dry-run")
@@ -129,9 +137,9 @@ func (s *LetsEncryptServer) checkIfCertExists(domain string) (bool, error) {
 }
 
 func (s *LetsEncryptServer) processNewCertRequests() {
-	for domain := range s.newCertChannel {
-		log.Printf("new cert request %v", domain)
-		if domain == "RENEW" {
+	for req := range s.newCertChannel {
+		log.Printf("new cert request %v", req.domain)
+		if req.domain == "RENEW" {
 			err := s.renewSslCerts()
 			if err != nil {
 				log.Printf("failed to renew certificates: %v", err)
@@ -139,24 +147,21 @@ func (s *LetsEncryptServer) processNewCertRequests() {
 			}
 			continue
 		}
-		if domain == "PING" {
-			continue
-		}
-		exists, err := s.checkIfCertExists(domain)
+		exists, err := s.checkIfCertExists(req.domain)
 		if err != nil {
-			log.Printf("failed to check if certificate for %s already exists: %v", domain, err)
+			log.Printf("failed to check if certificate for %s already exists: %v", req.domain, err)
 			continue
 		}
 		if exists {
-			log.Printf("certificate for %s already exists, skipping", domain)
+			log.Printf("certificate for %s already exists, skipping", req.domain)
 			continue
 		}
-		err = s.newSslCert(domain)
+		err = s.newSslCert(req.domain, req.altDomains)
 		if err != nil {
-			log.Printf("failed to generate certificate for %s: %v", domain, err)
+			log.Printf("failed to generate certificate for %s: %v", req.domain, err)
 			continue
 		}
-		log.Printf("successfully generated certificate for %s", domain)
+		log.Printf("successfully generated certificate for %s", req.domain)
 	}
 }
 
@@ -196,7 +201,8 @@ func (s *LetsEncryptServer) handleDump(writer http.ResponseWriter, request *http
 func (s *LetsEncryptServer) handleNewCert(writer http.ResponseWriter, request *http.Request) {
 	request.ParseForm()
 	domain := request.Form.Get("domain")
-	log.Printf("/new-cert?domain=%s request", domain)
+	altDomains := request.Form["alt_domains"]
+	log.Printf("/new-cert?%s request", request.Form.Encode())
 
 	if domain == "" {
 		writer.WriteHeader(http.StatusBadRequest)
@@ -216,7 +222,10 @@ func (s *LetsEncryptServer) handleNewCert(writer http.ResponseWriter, request *h
 		return
 	}
 
-	s.newCertChannel <- domain
+	var r newCertRequest
+	r.domain = domain
+	r.altDomains = altDomains
+	s.newCertChannel <- r
 
 	writer.WriteHeader(http.StatusOK)
 	writer.Write([]byte("ok"))
@@ -243,15 +252,10 @@ func (s *LetsEncryptServer) Run() error {
 
 	go func() {
 		for {
-			s.newCertChannel <- "RENEW"
+			var r newCertRequest
+			r.domain = "RENEW"
+			s.newCertChannel <- r
 			time.Sleep(1 * time.Hour)
-		}
-	}()
-
-	go func() {
-		for {
-			s.newCertChannel <- "PING"
-			time.Sleep(10 * time.Second)
 		}
 	}()
 

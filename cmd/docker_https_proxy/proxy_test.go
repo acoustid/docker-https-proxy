@@ -9,8 +9,9 @@ import (
 func TestRenderTemplate(t *testing.T) {
 	proxy := NewProxyServer()
 	proxy.Sites = append(proxy.Sites, &siteInfo{
-		Name:   "example",
-		Domain: "example.com",
+		Name:       "example",
+		Domain:     "example.com",
+		AltDomains: []string{"www.example.com"},
 		SSL: sslCertInfo{
 			CertificatePath: "/etc/ssl/example.pem",
 			PrivateKeyPath:  "/etc/ssl/private/example.key",
@@ -112,11 +113,16 @@ frontend fe_https
 	bind *:443 ssl crt /etc/haproxy/ssl/ alpn h2,http/1.1
 	acl is_letsencrypt path_beg /.well-known/acme-challenge
 	use_backend be_letsencrypt if is_letsencrypt
+
 	acl domain_example ssl_fc_sni -i example.com
+	acl alt_domain_example_0 ssl_fc_sni -i www.example.com
 	acl route_example_0 path_beg /api
-	use_backend be_example_api if domain_example route_example_0
 	acl route_example_1 path_beg /
+	use_backend be_example_api if domain_example route_example_0
+	use_backend be_example_api if alt_domain_example_0 route_example_0
 	use_backend be_example_web if domain_example route_example_1
+	use_backend be_example_web if alt_domain_example_0 route_example_1
+
 	acl domain_example2 ssl_fc_sni -i example2.com
 	acl route_example2_0 path_beg /
 	use_backend be_example2_default if domain_example2 route_example2_0

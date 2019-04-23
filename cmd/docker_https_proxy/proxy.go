@@ -23,9 +23,10 @@ const haproxySSLDir = "/etc/haproxy/ssl/"
 const haproxyConfigFile = "/etc/haproxy/haproxy.cfg"
 
 type siteInfo struct {
-	Name               string `json:"name"`
-	Domain             string `json:"domain"`
-	DisableLetsEncrypt bool   `json:"disable_letsencrypt"`
+	Name               string   `json:"name"`
+	Domain             string   `json:"domain"`
+	AltDomains         []string `json:"alt_domains"`
+	DisableLetsEncrypt bool     `json:"disable_letsencrypt"`
 	SSL                sslCertInfo
 	Backends           []siteBackendInfo `json:"backends"`
 	Routes             []siteRouteInfo   `json:"routes"`
@@ -91,11 +92,19 @@ frontend fe_https
 	bind *:443 ssl crt {{$.SSLDir}} alpn h2,http/1.1
 	acl is_letsencrypt path_beg /.well-known/acme-challenge
 	use_backend be_letsencrypt if is_letsencrypt
-{{range $site := .Sites -}}
-{{"\t"}}acl domain_{{.Name}} ssl_fc_sni -i {{$site.Domain}}
+{{range $site := .Sites}}
+{{"\t"}}acl domain_{{.Name}} ssl_fc_sni -i {{.Domain}}
+{{range $i, $domain := .AltDomains -}}
+{{"\t"}}acl alt_domain_{{$site.Name}}_{{$i}} ssl_fc_sni -i {{.}}
+{{end -}}
 {{range $i, $route := .Routes -}}
 {{"\t"}}acl route_{{$site.Name}}_{{$i}} path_beg {{.Path}}
+{{end -}}
+{{range $i, $route := $site.Routes -}}
 {{"\t"}}use_backend be_{{$site.Name}}_{{.Backend}} if domain_{{$site.Name}} route_{{$site.Name}}_{{$i}}
+{{range $j, $domain := $site.AltDomains -}}
+{{"\t"}}use_backend be_{{$site.Name}}_{{$route.Backend}} if alt_domain_{{$site.Name}}_{{$j}} route_{{$site.Name}}_{{$i}}
+{{end -}}
 {{end}}
 {{- end}}
 
@@ -387,6 +396,9 @@ func (p *ProxyServer) updateSslCerts() (bool, error) {
 		}
 		form := url.Values{}
 		form.Set("domain", site.Domain)
+		for _, domain := range site.AltDomains {
+			form.Set("alt_domain", domain)
+		}
 		http.PostForm(newCertURL, form)
 	}
 
