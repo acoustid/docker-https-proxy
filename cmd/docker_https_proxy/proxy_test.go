@@ -68,9 +68,6 @@ func TestRenderTemplate(t *testing.T) {
 						Port: 8090,
 					},
 				},
-				HealthCheck: siteBackendHealthCheckInfo{
-					Path: "/_health",
-				},
 			},
 		},
 		Routes: []siteRouteInfo{
@@ -80,134 +77,74 @@ func TestRenderTemplate(t *testing.T) {
 			},
 		},
 	})
+	proxy.EnableHTTPLog = true
 	var builder strings.Builder
-	err := proxy.nginxConfTpl.Execute(&builder, proxy)
+	err := proxy.haproxyConfigTmpl.Execute(&builder, proxy)
 	if err != nil {
 		t.Errorf("renderSiteTemplate failed: %v", err)
 	}
 	output := builder.String()
 	expectedOutput := `
-resolver 127.0.0.11;
+global
+	maxconn 1024
+	log stderr format raw daemon notice
+	tune.ssl.default-dh-param 2048
 
-upstream letsencrypt_master {
-	server localhost:12812;
-}
+defaults
+	mode http
+	timeout connect 60s
+	timeout client 1h
+	timeout server 1h
+	log stdout format raw daemon
+	option httplog
 
-
-
-upstream example_backend_web {
-	server srv1.example.com:8080;
-}
-
-upstream example_backend_api {
-	server srv-api1.example.com:8081;
-}
-
-server {
-	listen 80;
-	listen [::]:80;
-
-	server_name example.com;
-
-	location /.well-known/acme-challenge {
-		proxy_pass http://letsencrypt_master;
-	}
-
-	location / {
-		return 302 https://$host$request_uri;
-	}
-}
-
-server {
-	listen 443 ssl;
-	listen [::]:443 ssl;
-
-	server_name example.com;
-
-	ssl_certificate /etc/ssl/example.pem;
-	ssl_certificate_key /etc/ssl/private/example.key;
-
-	client_max_body_size 0;
-
-	location /.well-known/acme-challenge {
-		proxy_pass http://letsencrypt_master;
-	}
-
-	location /api {
-		proxy_pass http://example_backend_api;
-		proxy_set_header Host $http_host;
-		proxy_set_header X-Real-IP $remote_addr;
-		proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-		proxy_set_header X-Forwarded-Proto https;
-		proxy_set_header X-Forwarded-Ssl on;
-		proxy_read_timeout 3600;
-		proxy_connect_timeout 300;
-		proxy_redirect off;
-		proxy_http_version 1.1;
-	}
-
-	location / {
-		proxy_pass http://example_backend_web;
-		proxy_set_header Host $http_host;
-		proxy_set_header X-Real-IP $remote_addr;
-		proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-		proxy_set_header X-Forwarded-Proto https;
-		proxy_set_header X-Forwarded-Ssl on;
-		proxy_read_timeout 3600;
-		proxy_connect_timeout 300;
-		proxy_redirect off;
-		proxy_http_version 1.1;
-	}
-}
+resolvers main
+	nameserver dns1 127.0.0.11:53
 
 
-upstream example2_backend_default {
-	server srv1.example2.com:8090;
-}
+frontend fe_http
+	bind *:80
+	acl is_letsencrypt path_beg /.well-known/acme-challenge
+	redirect scheme https code 301 if !is_letsencrypt
+	use_backend be_letsencrypt if is_letsencrypt
 
-server {
-	listen 80;
-	listen [::]:80;
+frontend fe_https
+	bind *:443 ssl crt /etc/haproxy/ssl/ alpn h2,http/1.1
+	acl is_letsencrypt path_beg /.well-known/acme-challenge
+	use_backend be_letsencrypt if is_letsencrypt
+	acl domain_example ssl_fc_sni -i example.com
+	acl route_example_0 path_beg /api
+	use_backend be_example_api if domain_example route_example_0
+	acl route_example_1 path_beg /
+	use_backend be_example_web if domain_example route_example_1
+	acl domain_example2 ssl_fc_sni -i example2.com
+	acl route_example2_0 path_beg /
+	use_backend be_example2_default if domain_example2 route_example2_0
 
-	server_name example2.com;
 
-	location /.well-known/acme-challenge {
-		proxy_pass http://letsencrypt_master;
-	}
+backend be_letsencrypt
+	balance roundrobin
+	option httpchk GET /_health
+	http-check expect status 200
+	server-template srv_ 100 localhost:12812 check resolvers main
 
-	location / {
-		return 302 https://$host$request_uri;
-	}
-}
 
-server {
-	listen 443 ssl;
-	listen [::]:443 ssl;
+backend be_example_web
+	balance roundrobin
+	option httpchk GET /_health
+	http-check expect status 200
+	server-template srv_0_ 100 srv1.example.com:8080 check resolvers main
 
-	server_name example2.com;
+backend be_example_api
+	balance roundrobin
+	option httpchk GET /_health
+	http-check expect status 200
+	server-template srv_0_ 100 srv-api1.example.com:8081 check resolvers main
 
-	ssl_certificate /etc/ssl/example2.pem;
-	ssl_certificate_key /etc/ssl/private/example2.key;
 
-	client_max_body_size 0;
-
-	location /.well-known/acme-challenge {
-		proxy_pass http://letsencrypt_master;
-	}
-
-	location / {
-		proxy_pass http://example2_backend_default;
-		proxy_set_header Host $http_host;
-		proxy_set_header X-Real-IP $remote_addr;
-		proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-		proxy_set_header X-Forwarded-Proto https;
-		proxy_set_header X-Forwarded-Ssl on;
-		proxy_read_timeout 3600;
-		proxy_connect_timeout 300;
-		proxy_redirect off;
-		proxy_http_version 1.1;
-	}
-}
+backend be_example2_default
+	balance roundrobin
+	server-template srv_0_ 100 srv1.example2.com:8090 check resolvers main
 `
 
 	assertLongStringEqual(t, output, expectedOutput)

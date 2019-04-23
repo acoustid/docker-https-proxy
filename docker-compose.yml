@@ -1,0 +1,23 @@
+version: "3"
+services:
+  letsencrypt:
+    image: acoustid/https-proxy:latest
+    build: .
+    environment:
+      RUN_LETSENCRYPT_SERVER: 1
+      LETSENCRYPT_DRY_RUN: 1
+      LETSENCRYPT_EMAIL: lalinsky@gmail.com
+  proxy:
+    image: acoustid/https-proxy:latest
+    build: .
+    environment:
+      PROXY_LETSENCRYPT_SERVER_HOST: letsencrypt
+      PROXY_HTTP_LOG: 1
+      PROXY_SHUTDOWN_DELAY: 1s
+    stop_signal: SIGINT
+    stop_grace_period: 20s
+    ports:
+      - "127.0.0.1:80:80"
+      - "127.0.0.1:443:443"
+    depends_on:
+      - letsencrypt
