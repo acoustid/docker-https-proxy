@@ -1,7 +1,10 @@
 package main
 
 import (
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -63,6 +66,7 @@ func (s *LetsEncryptServer) newSslCert(domain string, altDomains []string) error
 		"--non-interactive",
 		"--agree-tos",
 		"--max-log-backups", "0",
+		"--expand",
 		"--email", s.email,
 		"--webroot",
 		"--webroot-path", certbotWebRootDir,
@@ -107,7 +111,7 @@ func (s *LetsEncryptServer) renewSslCerts() error {
 	return err
 }
 
-func (s *LetsEncryptServer) checkIfCertExists(domain string) (bool, error) {
+func (s *LetsEncryptServer) checkIfCertExists(domain string, altDomains []string) (bool, error) {
 	baseDir := path.Join(certbotConfigDir, "live", domain)
 	if _, err := os.Stat(baseDir); err != nil {
 		if os.IsNotExist(err) {
@@ -133,6 +137,32 @@ func (s *LetsEncryptServer) checkIfCertExists(domain string) (bool, error) {
 		return false, err
 	}
 
+	certOnlyPath := path.Join(baseDir, "cert.pem")
+	certPEM, err := ioutil.ReadFile(certOnlyPath)
+	if err != nil {
+		return false, err
+	}
+	block, _ := pem.Decode(certPEM)
+	if err != nil {
+		return false, err
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return false, err
+	}
+
+	err = cert.VerifyHostname(domain)
+	if err != nil {
+		return false, nil
+	}
+
+	for _, altDomain := range altDomains {
+		err = cert.VerifyHostname(altDomain)
+		if err != nil {
+			return false, nil
+		}
+	}
+
 	return true, nil
 }
 
@@ -147,21 +177,21 @@ func (s *LetsEncryptServer) processNewCertRequests() {
 			}
 			continue
 		}
-		exists, err := s.checkIfCertExists(req.domain)
+		exists, err := s.checkIfCertExists(req.domain, req.altDomains)
 		if err != nil {
-			log.Printf("failed to check if certificate for %s already exists: %v", req.domain, err)
+			log.Printf("failed to check if certificate for %v (and %v) already exists: %v", req.domain, req.altDomains, err)
 			continue
 		}
 		if exists {
-			log.Printf("certificate for %s already exists, skipping", req.domain)
+			log.Printf("certificate for %v (and %v) already exists, skipping", req.domain, req.altDomains)
 			continue
 		}
 		err = s.newSslCert(req.domain, req.altDomains)
 		if err != nil {
-			log.Printf("failed to generate certificate for %s: %v", req.domain, err)
+			log.Printf("failed to generate certificate for %v (and %v): %v", req.domain, req.altDomains, err)
 			continue
 		}
-		log.Printf("successfully generated certificate for %s", req.domain)
+		log.Printf("successfully generated certificate for %v (and %v)", req.domain, req.altDomains)
 	}
 }
 
@@ -209,14 +239,14 @@ func (s *LetsEncryptServer) handleNewCert(writer http.ResponseWriter, request *h
 		return
 	}
 
-	exists, err := s.checkIfCertExists(domain)
+	exists, err := s.checkIfCertExists(domain, altDomains)
 	if err != nil {
-		log.Printf("failed to check if certificate for %s already exists: %v", domain, err)
+		log.Printf("failed to check if certificate for %v (and %v) already exists: %v", domain, altDomains, err)
 		writer.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	if exists {
-		log.Printf("certificate for %s already exists, skipping", domain)
+		log.Printf("certificate for %v (and %v) already exists, skipping", domain, altDomains)
 		writer.WriteHeader(http.StatusOK)
 		writer.Write([]byte("already exists"))
 		return
