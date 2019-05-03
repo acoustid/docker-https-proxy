@@ -30,6 +30,8 @@ type siteInfo struct {
 	SSL                sslCertInfo
 	Backends           []siteBackendInfo `json:"backends"`
 	Routes             []siteRouteInfo   `json:"routes"`
+	EnableAuth         bool              `json:"authenticate"`
+	Users              []siteUserInfo    `json:"users"`
 }
 
 type letsEncryptInfo struct {
@@ -40,6 +42,11 @@ type letsEncryptInfo struct {
 type letsEncryptServerInfo struct {
 	Host string
 	Port int
+}
+
+type siteUserInfo struct {
+	Name     string
+	Password string
 }
 
 type siteBackendInfo struct {
@@ -81,6 +88,14 @@ defaults
 resolvers main
 	nameserver dns1 {{$.Resolver}}:53
 
+{{range .Sites}}
+{{if .EnableAuth -}}
+userlist users_{{.Name}}
+{{- range .Users}}
+  user {{.Name}} password {{.Password}}
+{{- end}}
+{{- end}}
+{{end}}
 
 frontend fe_http
 	bind *:80
@@ -97,13 +112,20 @@ frontend fe_https
 {{range $i, $domain := .AltDomains -}}
 {{"\t"}}acl alt_domain_{{$site.Name}}_{{$i}} ssl_fc_sni -i {{.}}
 {{end -}}
+{{if .EnableAuth -}}
+{{"\t"}}acl auth_{{$site.Name}} http_auth(users_{{$site.Name}})
+{{"\t"}}http-request auth realm private if domain_{{$site.Name}} !auth_{{$site.Name}}
+{{range $i, $domain := .AltDomains -}}
+{{"\t"}}http-request auth realm private if alt_domain_{{$site.Name}}_{{$i}} !auth_{{$site.Name}}
+{{end -}}
+{{end -}}
 {{range $i, $route := .Routes -}}
 {{"\t"}}acl route_{{$site.Name}}_{{$i}} path_beg {{.Path}}
 {{end -}}
 {{range $i, $route := $site.Routes -}}
-{{"\t"}}use_backend be_{{$site.Name}}_{{.Backend}} if domain_{{$site.Name}} route_{{$site.Name}}_{{$i}}
+{{"\t"}}use_backend be_{{$site.Name}}_{{.Backend}} if domain_{{$site.Name}} route_{{$site.Name}}_{{$i}}{{if $site.EnableAuth}} auth_{{$site.Name}}{{end}}
 {{range $j, $domain := $site.AltDomains -}}
-{{"\t"}}use_backend be_{{$site.Name}}_{{$route.Backend}} if alt_domain_{{$site.Name}}_{{$j}} route_{{$site.Name}}_{{$i}}
+{{"\t"}}use_backend be_{{$site.Name}}_{{$route.Backend}} if alt_domain_{{$site.Name}}_{{$j}} route_{{$site.Name}}_{{$i}}{{if $site.EnableAuth}} auth_{{$site.Name}}{{end}}
 {{end -}}
 {{end}}
 {{- end}}
@@ -121,6 +143,9 @@ backend be_{{$site.Name}}_{{.Name}}
 {{- if .HealthCheck.Path}}
 	option httpchk GET {{.HealthCheck.Path}}
 	http-check expect status 200
+{{- end}}
+{{- if $site.EnableAuth}}
+	http-request del-header Authorization
 {{- end}}
 {{- range $i, $server := .Servers}}
 {{"\t"}}server-template srv_{{$i}}_ 100 {{.Host}}:{{.Port}} check resolvers main

@@ -77,6 +77,17 @@ func TestRenderTemplate(t *testing.T) {
 				Backend: "default",
 			},
 		},
+		EnableAuth: true,
+		Users: []siteUserInfo{
+			{
+				Name:     "lukas",
+				Password: "pass",
+			},
+			{
+				Name:     "lukas2",
+				Password: "pass2",
+			},
+		},
 	})
 	proxy.EnableHTTPLog = true
 	var builder strings.Builder
@@ -103,6 +114,13 @@ resolvers main
 	nameserver dns1 127.0.0.11:53
 
 
+
+
+userlist users_example2
+  user lukas password pass
+  user lukas2 password pass2
+
+
 frontend fe_http
 	bind *:80
 	acl is_letsencrypt path_beg /.well-known/acme-challenge
@@ -124,8 +142,10 @@ frontend fe_https
 	use_backend be_example_web if alt_domain_example_0 route_example_1
 
 	acl domain_example2 ssl_fc_sni -i example2.com
+	acl auth_example2 http_auth(users_example2)
+	http-request auth realm private if domain_example2 !auth_example2
 	acl route_example2_0 path_beg /
-	use_backend be_example2_default if domain_example2 route_example2_0
+	use_backend be_example2_default if domain_example2 route_example2_0 auth_example2
 
 
 backend be_letsencrypt
@@ -150,6 +170,7 @@ backend be_example_api
 
 backend be_example2_default
 	balance roundrobin
+	http-request del-header Authorization
 	server-template srv_0_ 100 srv1.example2.com:8090 check resolvers main
 `
 
