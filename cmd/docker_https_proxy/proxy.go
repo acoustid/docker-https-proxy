@@ -81,6 +81,7 @@ defaults
 	timeout client 1h
 	timeout server 1h
 	log stdout format raw daemon
+	default-server init-addr last,libc,none
 {{- if .EnableHTTPLog}}
 	option httplog
 {{- end}}

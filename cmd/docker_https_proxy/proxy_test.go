@@ -107,6 +107,7 @@ defaults
 	timeout connect 60s
 	timeout client 1h
 	timeout server 1h
+	default-server init-addr last,libc,none
 	log stdout format raw daemon
 	option httplog
 
