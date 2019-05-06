@@ -177,7 +177,7 @@ backend be_example_web
 	option httpchk GET /_health
 	http-check expect status 200
 	server-template srv_0_ 100 srv1.example.com:8080 check resolvers main
-	redirect scheme https code 301 if { !ssl_fc }
+	redirect scheme https code 301 if !{ ssl_fc }
 
 backend be_example_api
 	balance roundrobin
@@ -188,7 +188,7 @@ backend be_example_api
 	option httpchk GET /_health
 	http-check expect status 200
 	server-template srv_0_ 100 srv-api1.example.com:8081 check resolvers main
-	redirect scheme https code 301 if { !ssl_fc }
+	redirect scheme https code 301 if !{ ssl_fc }
 
 
 backend be_example2_default

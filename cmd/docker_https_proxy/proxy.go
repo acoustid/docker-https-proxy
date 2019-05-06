@@ -167,7 +167,7 @@ backend be_{{$site.Name}}_{{.Name}}
 {{- range $i, $server := .Servers}}
 {{"\t"}}server-template srv_{{$i}}_ 100 {{.Host}}:{{.Port}} check resolvers main
 {{- end}}
-{{if not $site.AllowHTTP}}{{"\t"}}redirect scheme https code 301 if { !ssl_fc }{{end}}
+{{if not $site.AllowHTTP}}{{"\t"}}redirect scheme https code 301 if !{ ssl_fc }{{end}}
 {{end}}
 {{end}}
 `
