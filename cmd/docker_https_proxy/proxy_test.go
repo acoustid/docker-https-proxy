@@ -107,8 +107,8 @@ defaults
 	timeout connect 60s
 	timeout client 1h
 	timeout server 1h
-	default-server init-addr last,libc,none
 	log stdout format raw daemon
+	default-server init-addr last,libc,none
 	option httplog
 
 resolvers main
@@ -158,12 +158,20 @@ backend be_letsencrypt
 
 backend be_example_web
 	balance roundrobin
+	option forwardfor
+	http-request set-header X-Forwarded-Host %[req.hdr(Host)]
+	http-request set-header X-Forwarded-Port %[dst_port]
+	http-request set-header X-Forwarded-Proto https if { ssl_fc }
 	option httpchk GET /_health
 	http-check expect status 200
 	server-template srv_0_ 100 srv1.example.com:8080 check resolvers main
 
 backend be_example_api
 	balance roundrobin
+	option forwardfor
+	http-request set-header X-Forwarded-Host %[req.hdr(Host)]
+	http-request set-header X-Forwarded-Port %[dst_port]
+	http-request set-header X-Forwarded-Proto https if { ssl_fc }
 	option httpchk GET /_health
 	http-check expect status 200
 	server-template srv_0_ 100 srv-api1.example.com:8081 check resolvers main
@@ -171,6 +179,10 @@ backend be_example_api
 
 backend be_example2_default
 	balance roundrobin
+	option forwardfor
+	http-request set-header X-Forwarded-Host %[req.hdr(Host)]
+	http-request set-header X-Forwarded-Port %[dst_port]
+	http-request set-header X-Forwarded-Proto https if { ssl_fc }
 	http-request del-header Authorization
 	server-template srv_0_ 100 srv1.example2.com:8090 check resolvers main
 `

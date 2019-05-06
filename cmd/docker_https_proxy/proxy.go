@@ -141,6 +141,10 @@ backend be_letsencrypt
 {{range $backend := .Backends}}
 backend be_{{$site.Name}}_{{.Name}}
 	balance roundrobin
+	option forwardfor
+	http-request set-header X-Forwarded-Host %[req.hdr(Host)]
+	http-request set-header X-Forwarded-Port %[dst_port]
+	http-request set-header X-Forwarded-Proto https if { ssl_fc }
 {{- if .HealthCheck.Path}}
 	option httpchk GET {{.HealthCheck.Path}}
 	http-check expect status 200
