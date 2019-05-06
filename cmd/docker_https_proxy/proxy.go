@@ -32,6 +32,7 @@ type siteInfo struct {
 	Routes             []siteRouteInfo   `json:"routes"`
 	EnableAuth         bool              `json:"authenticate"`
 	Users              []siteUserInfo    `json:"users"`
+	AllowHTTP          bool              `json:"allow_http"`
 }
 
 type letsEncryptInfo struct {
@@ -111,15 +112,14 @@ frontend fe_http
 	bind *:80
 	acl is_health path_beg /_health
 	acl is_letsencrypt path_beg /.well-known/acme-challenge
-	redirect scheme https code 301 if !is_letsencrypt !is_health
 	use_backend be_utils if is_health
 	use_backend be_letsencrypt if is_letsencrypt
 
 frontend fe_https
 	bind *:443 ssl crt {{$.SSLDir}} alpn h2,http/1.1
 	acl is_health path_beg /_health
-	use_backend be_utils if is_health
 	acl is_letsencrypt path_beg /.well-known/acme-challenge
+	use_backend be_utils if is_health
 	use_backend be_letsencrypt if is_letsencrypt
 {{range $site := .Sites}}
 {{"\t"}}acl domain_{{.Name}} ssl_fc_sni -i {{.Domain}}
@@ -173,6 +173,7 @@ backend be_{{$site.Name}}_{{.Name}}
 {{- range $i, $server := .Servers}}
 {{"\t"}}server-template srv_{{$i}}_ 100 {{.Host}}:{{.Port}} check resolvers main
 {{- end}}
+{{if not $site.AllowHTTP}}{{"\t"}}redirect scheme https code 301 if { !ssl_fc }{{end}}
 {{end}}
 {{end}}
 `
