@@ -133,12 +133,16 @@ userlist users_example2
 
 frontend fe_http
 	bind *:80
+	acl is_health path_beg /_health
+	use_backend be_utils if is_health
 	acl is_letsencrypt path_beg /.well-known/acme-challenge
 	redirect scheme https code 301 if !is_letsencrypt
 	use_backend be_letsencrypt if is_letsencrypt
 
 frontend fe_https
 	bind *:443 ssl crt /etc/haproxy/ssl/ alpn h2,http/1.1
+	acl is_health path_beg /_health
+	use_backend be_utils if is_health
 	acl is_letsencrypt path_beg /.well-known/acme-challenge
 	use_backend be_letsencrypt if is_letsencrypt
 
@@ -156,6 +160,11 @@ frontend fe_https
 	http-request auth realm private if domain_example2 !auth_example2
 	acl route_example2_0 path_beg /
 	use_backend be_example2_default if domain_example2 route_example2_0 auth_example2
+
+
+backend be_utils
+	balance roundrobin
+	server srv 127.0.0.1:12813
 
 
 backend be_letsencrypt

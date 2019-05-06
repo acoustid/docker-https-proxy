@@ -109,12 +109,16 @@ userlist users_{{.Name}}
 
 frontend fe_http
 	bind *:80
+	acl is_health path_beg /_health
+	use_backend be_utils if is_health
 	acl is_letsencrypt path_beg /.well-known/acme-challenge
 	redirect scheme https code 301 if !is_letsencrypt
 	use_backend be_letsencrypt if is_letsencrypt
 
 frontend fe_https
 	bind *:443 ssl crt {{$.SSLDir}} alpn h2,http/1.1
+	acl is_health path_beg /_health
+	use_backend be_utils if is_health
 	acl is_letsencrypt path_beg /.well-known/acme-challenge
 	use_backend be_letsencrypt if is_letsencrypt
 {{range $site := .Sites}}
@@ -139,6 +143,11 @@ frontend fe_https
 {{end -}}
 {{end}}
 {{- end}}
+
+backend be_utils
+	balance roundrobin
+	server srv 127.0.0.1:{{.UtilsServerPort}}
+
 
 backend be_letsencrypt
 	balance roundrobin
@@ -211,6 +220,7 @@ type ProxyServer struct {
 	EnableHTTPLog     bool
 	shutdown          bool
 	shutdownDelay     time.Duration
+	UtilsServerPort   int
 }
 
 // NewProxyServer creates a new ProxyServer instance.
@@ -229,6 +239,7 @@ func NewProxyServer() *ProxyServer {
 		SitesDir:          defaultSitesDir,
 		LetsEncrypt:       le,
 		SSLDir:            haproxySSLDir,
+		UtilsServerPort:   defaultProxyUtilsServerPort,
 	}
 }
 
@@ -519,7 +530,7 @@ func (p *ProxyServer) handleHealth(writer http.ResponseWriter, request *http.Req
 func (p *ProxyServer) runUtilsServer() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/_health", p.handleHealth)
-	server := &http.Server{Addr: fmt.Sprintf(":%d", defaultProxyUtilsServerPort), Handler: mux}
+	server := &http.Server{Addr: fmt.Sprintf(":%d", p.UtilsServerPort), Handler: mux}
 	return server.ListenAndServe()
 }
 
