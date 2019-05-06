@@ -60,6 +60,7 @@ func TestRenderTemplate(t *testing.T) {
 			CertificatePath: "/etc/ssl/example2.pem",
 			PrivateKeyPath:  "/etc/ssl/private/example2.key",
 		},
+		AllowHTTP: true,
 		Backends: []siteBackendInfo{
 			{
 				Name: "default",
@@ -131,14 +132,8 @@ userlist users_example2
   user lukas2 password pass2
 
 
-frontend fe_http
+frontend fe_proxy
 	bind *:80
-	acl is_health path_beg /_health
-	acl is_letsencrypt path_beg /.well-known/acme-challenge
-	use_backend be_utils if is_health
-	use_backend be_letsencrypt if is_letsencrypt
-
-frontend fe_https
 	bind *:443 ssl crt /etc/haproxy/ssl/ alpn h2,http/1.1
 	acl is_health path_beg /_health
 	acl is_letsencrypt path_beg /.well-known/acme-challenge
@@ -204,7 +199,6 @@ backend be_example2_default
 	http-request set-header X-Forwarded-Proto https if { ssl_fc }
 	http-request del-header Authorization
 	server-template srv_0_ 100 srv1.example2.com:8090 check resolvers main
-	redirect scheme https code 301 if { !ssl_fc }
 `
 
 	assertLongStringEqual(t, output, expectedOutput)
