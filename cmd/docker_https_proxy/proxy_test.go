@@ -114,6 +114,15 @@ defaults
 resolvers main
 	nameserver dns1 127.0.0.11:53
 
+listen stats
+  bind *:7932
+  mode http
+  stats enable
+  stats hide-version
+  stats realm HAproxy\ Statistics
+  stats uri /_stats
+  stats auth stats:nopassword
+
 
 
 

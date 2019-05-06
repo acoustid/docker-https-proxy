@@ -15,5 +15,9 @@ RUN apt-get update && \
 
 COPY --from=builder /go/src/github.com/acoustid/docker-https-proxy/docker_https_proxy /usr/local/bin/
 
+# EXPOSE 80
+# EXPOSE 443
+# EXPOSE 7932
+
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 CMD ["docker_https_proxy"]

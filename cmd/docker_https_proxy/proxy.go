@@ -89,6 +89,15 @@ defaults
 resolvers main
 	nameserver dns1 {{$.Resolver}}:53
 
+listen stats
+  bind *:7932
+  mode http
+  stats enable
+  stats hide-version
+  stats realm HAproxy\ Statistics
+  stats uri /_stats
+  stats auth stats:nopassword
+
 {{range .Sites}}
 {{if .EnableAuth -}}
 userlist users_{{.Name}}
