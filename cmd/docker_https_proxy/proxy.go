@@ -116,9 +116,9 @@ frontend fe_proxy
 	use_backend be_utils if is_health
 	use_backend be_letsencrypt if is_letsencrypt
 {{range $site := .Sites}}
-{{"\t"}}acl domain_{{.Name}} ssl_fc_sni -i {{.Domain}}
+{{"\t"}}acl domain_{{.Name}} hdr(Host) -i {{.Domain}}
 {{range $i, $domain := .AltDomains -}}
-{{"\t"}}acl alt_domain_{{$site.Name}}_{{$i}} ssl_fc_sni -i {{.}}
+{{"\t"}}acl alt_domain_{{$site.Name}}_{{$i}} hdr(Host) -i {{.}}
 {{end -}}
 {{if .EnableAuth -}}
 {{"\t"}}acl auth_{{$site.Name}} http_auth(users_{{$site.Name}})
