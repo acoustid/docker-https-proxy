@@ -134,9 +134,9 @@ userlist users_example2
 frontend fe_http
 	bind *:80
 	acl is_health path_beg /_health
-	use_backend be_utils if is_health
 	acl is_letsencrypt path_beg /.well-known/acme-challenge
-	redirect scheme https code 301 if !is_letsencrypt
+	redirect scheme https code 301 if !is_letsencrypt !is_health
+	use_backend be_utils if is_health
 	use_backend be_letsencrypt if is_letsencrypt
 
 frontend fe_https
