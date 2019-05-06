@@ -523,8 +523,13 @@ func (p *ProxyServer) mergeCertificateFiles(name string, certificatePath string,
 }
 
 func (p *ProxyServer) handleHealth(writer http.ResponseWriter, request *http.Request) {
-	writer.WriteHeader(http.StatusOK)
-	writer.Write([]byte("ok"))
+	if p.shutdown {
+		writer.WriteHeader(http.StatusServiceUnavailable)
+		writer.Write([]byte("shutdown"))
+	} else {
+		writer.WriteHeader(http.StatusOK)
+		writer.Write([]byte("ok"))
+	}
 }
 
 func (p *ProxyServer) runUtilsServer() error {
