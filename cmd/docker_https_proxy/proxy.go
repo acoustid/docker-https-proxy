@@ -117,14 +117,22 @@ frontend fe_proxy
 	use_backend be_letsencrypt if is_letsencrypt
 {{range $site := .Sites}}
 {{"\t"}}acl domain_{{.Name}} hdr(Host) -i {{.Domain}}
+{{"\t"}}acl domain_{{.Name}}_80 hdr(Host) -i {{.Domain}}:80
+{{"\t"}}acl domain_{{.Name}}_443 hdr(Host) -i {{.Domain}}:443
 {{range $i, $domain := .AltDomains -}}
 {{"\t"}}acl alt_domain_{{$site.Name}}_{{$i}} hdr(Host) -i {{.}}
+{{"\t"}}acl alt_domain_{{$site.Name}}_{{$i}}_80 hdr(Host) -i {{.}}:80
+{{"\t"}}acl alt_domain_{{$site.Name}}_{{$i}}_443 hdr(Host) -i {{.}}:443
 {{end -}}
 {{if .EnableAuth -}}
 {{"\t"}}acl auth_{{$site.Name}} http_auth(users_{{$site.Name}})
 {{"\t"}}http-request auth realm private if domain_{{$site.Name}} !auth_{{$site.Name}}
+{{"\t"}}http-request auth realm private if domain_{{$site.Name}}_80 !auth_{{$site.Name}}
+{{"\t"}}http-request auth realm private if domain_{{$site.Name}}_443 !auth_{{$site.Name}}
 {{range $i, $domain := .AltDomains -}}
 {{"\t"}}http-request auth realm private if alt_domain_{{$site.Name}}_{{$i}} !auth_{{$site.Name}}
+{{"\t"}}http-request auth realm private if alt_domain_{{$site.Name}}_{{$i}}_80 !auth_{{$site.Name}}
+{{"\t"}}http-request auth realm private if alt_domain_{{$site.Name}}_{{$i}}_443 !auth_{{$site.Name}}
 {{end -}}
 {{end -}}
 {{range $i, $route := .Routes -}}
@@ -132,8 +140,12 @@ frontend fe_proxy
 {{end -}}
 {{range $i, $route := $site.Routes -}}
 {{"\t"}}use_backend be_{{$site.Name}}_{{.Backend}} if domain_{{$site.Name}} route_{{$site.Name}}_{{$i}}{{if $site.EnableAuth}} auth_{{$site.Name}}{{end}}
+{{"\t"}}use_backend be_{{$site.Name}}_{{.Backend}} if domain_{{$site.Name}}_80 route_{{$site.Name}}_{{$i}}{{if $site.EnableAuth}} auth_{{$site.Name}}{{end}}
+{{"\t"}}use_backend be_{{$site.Name}}_{{.Backend}} if domain_{{$site.Name}}_443 route_{{$site.Name}}_{{$i}}{{if $site.EnableAuth}} auth_{{$site.Name}}{{end}}
 {{range $j, $domain := $site.AltDomains -}}
 {{"\t"}}use_backend be_{{$site.Name}}_{{$route.Backend}} if alt_domain_{{$site.Name}}_{{$j}} route_{{$site.Name}}_{{$i}}{{if $site.EnableAuth}} auth_{{$site.Name}}{{end}}
+{{"\t"}}use_backend be_{{$site.Name}}_{{$route.Backend}} if alt_domain_{{$site.Name}}_{{$j}}_80 route_{{$site.Name}}_{{$i}}{{if $site.EnableAuth}} auth_{{$site.Name}}{{end}}
+{{"\t"}}use_backend be_{{$site.Name}}_{{$route.Backend}} if alt_domain_{{$site.Name}}_{{$j}}_443 route_{{$site.Name}}_{{$i}}{{if $site.EnableAuth}} auth_{{$site.Name}}{{end}}
 {{end -}}
 {{end}}
 {{- end}}

@@ -141,19 +141,37 @@ frontend fe_proxy
 	use_backend be_letsencrypt if is_letsencrypt
 
 	acl domain_example hdr(Host) -i example.com
+	acl domain_example_80 hdr(Host) -i example.com:80
+	acl domain_example_443 hdr(Host) -i example.com:443
 	acl alt_domain_example_0 hdr(Host) -i www.example.com
+	acl alt_domain_example_0_80 hdr(Host) -i www.example.com:80
+	acl alt_domain_example_0_443 hdr(Host) -i www.example.com:443
 	acl route_example_0 path_beg /api
 	acl route_example_1 path_beg /
 	use_backend be_example_api if domain_example route_example_0
+	use_backend be_example_api if domain_example_80 route_example_0
+	use_backend be_example_api if domain_example_443 route_example_0
 	use_backend be_example_api if alt_domain_example_0 route_example_0
+	use_backend be_example_api if alt_domain_example_0_80 route_example_0
+	use_backend be_example_api if alt_domain_example_0_443 route_example_0
 	use_backend be_example_web if domain_example route_example_1
+	use_backend be_example_web if domain_example_80 route_example_1
+	use_backend be_example_web if domain_example_443 route_example_1
 	use_backend be_example_web if alt_domain_example_0 route_example_1
+	use_backend be_example_web if alt_domain_example_0_80 route_example_1
+	use_backend be_example_web if alt_domain_example_0_443 route_example_1
 
 	acl domain_example2 hdr(Host) -i example2.com
+	acl domain_example2_80 hdr(Host) -i example2.com:80
+	acl domain_example2_443 hdr(Host) -i example2.com:443
 	acl auth_example2 http_auth(users_example2)
 	http-request auth realm private if domain_example2 !auth_example2
+	http-request auth realm private if domain_example2_80 !auth_example2
+	http-request auth realm private if domain_example2_443 !auth_example2
 	acl route_example2_0 path_beg /
 	use_backend be_example2_default if domain_example2 route_example2_0 auth_example2
+	use_backend be_example2_default if domain_example2_80 route_example2_0 auth_example2
+	use_backend be_example2_default if domain_example2_443 route_example2_0 auth_example2
 
 
 backend be_utils
