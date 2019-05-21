@@ -111,10 +111,14 @@ userlist users_{{.Name}}
 frontend fe_proxy
 	bind *:80
 	bind *:443 ssl crt {{$.SSLDir}} alpn h2,http/1.1
+
+	capture request header Host len 20
+
 	acl is_health path_beg /_health
 	acl is_letsencrypt path_beg /.well-known/acme-challenge
 	use_backend be_utils if is_health
 	use_backend be_letsencrypt if is_letsencrypt
+
 {{range $site := .Sites}}
 {{"\t"}}acl domain_{{.Name}} hdr(Host) -i {{.Domain}}
 {{"\t"}}acl domain_{{.Name}}_80 hdr(Host) -i {{.Domain}}:80
