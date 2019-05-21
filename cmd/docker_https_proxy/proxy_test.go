@@ -137,6 +137,7 @@ frontend fe_proxy
 	bind *:443 ssl crt /etc/haproxy/ssl/ alpn h2,http/1.1
 
 	capture request header Host len 20
+	capture response header Content-Length len 10
 
 	acl is_health path_beg /_health
 	acl is_letsencrypt path_beg /.well-known/acme-challenge
