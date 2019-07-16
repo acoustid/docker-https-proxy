@@ -96,6 +96,7 @@ func (s *LetsEncryptServer) renewSslCerts() error {
 		"--non-interactive",
 		"--agree-tos",
 		"--max-log-backups", "0",
+		"--webroot-path", certbotWebRootDir,
 	)
 
 	if s.dryRun {
