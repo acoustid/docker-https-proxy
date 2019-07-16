@@ -199,7 +199,7 @@ backend be_example_web
 	http-request set-header X-Forwarded-Proto https if { ssl_fc }
 	option httpchk GET /_health
 	http-check expect status 200
-	server-template srv_0_ 100 srv1.example.com:8080 check resolvers main
+	server-template srv_srv1_example_com_8080_ 100 srv1.example.com:8080 check resolvers main
 	redirect scheme https code 301 if !{ ssl_fc }
 
 backend be_example_api
@@ -210,7 +210,7 @@ backend be_example_api
 	http-request set-header X-Forwarded-Proto https if { ssl_fc }
 	option httpchk GET /_health
 	http-check expect status 200
-	server-template srv_0_ 100 srv-api1.example.com:8081 check resolvers main
+	server-template srv_srv_api1_example_com_8081_ 100 srv-api1.example.com:8081 check resolvers main
 	redirect scheme https code 301 if !{ ssl_fc }
 
 
@@ -221,7 +221,7 @@ backend be_example2_default
 	http-request set-header X-Forwarded-Port %[dst_port]
 	http-request set-header X-Forwarded-Proto https if { ssl_fc }
 	http-request del-header Authorization
-	server-template srv_0_ 100 srv1.example2.com:8090 check resolvers main
+	server-template srv_srv1_example2_com_8090_ 100 srv1.example2.com:8090 check resolvers main
 `
 
 	assertLongStringEqual(t, output, expectedOutput)

@@ -61,6 +61,10 @@ type siteBackendServerInfo struct {
 	Port int    `json:"port"`
 }
 
+func (s siteBackendServerInfo) Name() string {
+	return fmt.Sprintf("%v_%v", strings.Replace(strings.Replace(s.Host, ".", "_", -1), "-", "_", -1), s.Port)
+}
+
 type siteBackendHealthCheckInfo struct {
 	Path string `json:"path"`
 }
@@ -182,7 +186,7 @@ backend be_{{$site.Name}}_{{.Name}}
 	http-request del-header Authorization
 {{- end}}
 {{- range $i, $server := .Servers}}
-{{"\t"}}server-template srv_{{$i}}_ 100 {{.Host}}:{{.Port}} check resolvers main
+{{"\t"}}server-template srv_{{.Name}}_ 100 {{.Host}}:{{.Port}} check resolvers main
 {{- end}}
 {{if not $site.AllowHTTP}}{{"\t"}}redirect scheme https code 301 if !{ ssl_fc }{{end}}
 {{end}}
