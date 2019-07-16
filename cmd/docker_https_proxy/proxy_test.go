@@ -170,9 +170,9 @@ frontend fe_proxy
 	acl domain_example2_80 hdr(Host) -i example2.com:80
 	acl domain_example2_443 hdr(Host) -i example2.com:443
 	acl auth_example2 http_auth(users_example2)
-	http-request auth realm private if domain_example2 !auth_example2
-	http-request auth realm private if domain_example2_80 !auth_example2
-	http-request auth realm private if domain_example2_443 !auth_example2
+	http-request auth realm private if domain_example2 !auth_example2 !is_health !is_letsencrypt
+	http-request auth realm private if domain_example2_80 !auth_example2 !is_health !is_letsencrypt
+	http-request auth realm private if domain_example2_443 !auth_example2 !is_health !is_letsencrypt
 	acl route_example2_0 path_beg /
 	use_backend be_example2_default if domain_example2 route_example2_0 auth_example2
 	use_backend be_example2_default if domain_example2_80 route_example2_0 auth_example2

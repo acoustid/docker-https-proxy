@@ -135,13 +135,13 @@ frontend fe_proxy
 {{end -}}
 {{if .EnableAuth -}}
 {{"\t"}}acl auth_{{$site.Name}} http_auth(users_{{$site.Name}})
-{{"\t"}}http-request auth realm private if domain_{{$site.Name}} !auth_{{$site.Name}}
-{{"\t"}}http-request auth realm private if domain_{{$site.Name}}_80 !auth_{{$site.Name}}
-{{"\t"}}http-request auth realm private if domain_{{$site.Name}}_443 !auth_{{$site.Name}}
+{{"\t"}}http-request auth realm private if domain_{{$site.Name}} !auth_{{$site.Name}} !is_health !is_letsencrypt
+{{"\t"}}http-request auth realm private if domain_{{$site.Name}}_80 !auth_{{$site.Name}} !is_health !is_letsencrypt
+{{"\t"}}http-request auth realm private if domain_{{$site.Name}}_443 !auth_{{$site.Name}} !is_health !is_letsencrypt
 {{range $i, $domain := .AltDomains -}}
-{{"\t"}}http-request auth realm private if alt_domain_{{$site.Name}}_{{$i}} !auth_{{$site.Name}}
-{{"\t"}}http-request auth realm private if alt_domain_{{$site.Name}}_{{$i}}_80 !auth_{{$site.Name}}
-{{"\t"}}http-request auth realm private if alt_domain_{{$site.Name}}_{{$i}}_443 !auth_{{$site.Name}}
+{{"\t"}}http-request auth realm private if alt_domain_{{$site.Name}}_{{$i}} !auth_{{$site.Name}} !is_health !is_letsencrypt
+{{"\t"}}http-request auth realm private if alt_domain_{{$site.Name}}_{{$i}}_80 !auth_{{$site.Name}} !is_health !is_letsencrypt
+{{"\t"}}http-request auth realm private if alt_domain_{{$site.Name}}_{{$i}}_443 !auth_{{$site.Name}} !is_health !is_letsencrypt
 {{end -}}
 {{end -}}
 {{range $i, $route := .Routes -}}
